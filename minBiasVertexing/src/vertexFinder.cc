@@ -8,10 +8,8 @@
 #include "TVectorD.h"
 #include "TMath.h"
 
-//#include "../interface/DivisiveMethod.h"
 #include "../interface/PairGroupMethod.h"
 #include "../interface/FastPairwiseNearestNeighbor.h"
-//#include "../interface/NeighborJoining.h"
 #include "../interface/GaussianMixture.h"
 #include "../interface/KMeansMethod.h"
 #include "../interface/OptimalTree.h"
@@ -132,8 +130,8 @@ void generatePoints(int K, vector<pair<double,double> > & points,
   vertices.clear();
 
 #ifdef Debug
-  ofstream file("z.dat");
-  ofstream file0("z0.gnu");
+  ofstream file ("../out/z.dat");
+  ofstream file0("../out/z0.gnu");
   cerr << " generate K = " << K << endl;
 #endif
 
@@ -223,7 +221,6 @@ void generatePoints(int K, vector<pair<double,double> > & points,
   {
     int k = vertex->second.size();
 
-    // FIXME
     if(k > 0)
       chi2 += k*(1 - 2 * log(float(k)/n));
   }
@@ -253,7 +250,6 @@ double getChi2(const VertexCollection & vertices)
   {
     int k = vertex->second.size();
 
-    // FIXME
     if(k > 0)
       chi2 += k*(1 - 2 * log(float(k)/n));
   }
@@ -275,7 +271,6 @@ double getLambda(const VertexCollection & vertices)
   {
     int k = vertex->second.size();
 
-    // FIXME
     if(k > 0)
       chi2 += -2 * k * log(float(k)/n);
   }
@@ -292,8 +287,8 @@ void evaluatePerformance(const VertexCollection & sim,
 {
 #ifdef Debug
   cerr << endl
-       << " sim = " << sim.size()
-       << " rec = " << rec.size() << endl;
+       << "  sim = " << sim.size()
+        << " rec = " << rec.size() << endl;
 #endif
 
   // Look at simvertices
@@ -320,8 +315,7 @@ void evaluatePerformance(const VertexCollection & sim,
         if(*ir == *is)
           nshared++;
 
-      if(nshared > nallrec / 2) //FIXME
-//      if(nshared > nallsim / 2)
+      if(nshared > nallrec / 2)
       {
         nassoc++;
         dz = s->first - r->first;
@@ -373,17 +367,13 @@ void evaluatePerformance(const VertexCollection & sim,
         if(*ir == *is)
           nshared++;
 
-      if(nshared > nallsim / 2 && nallsim >= nMin) // accepted, FIXME
-//      if(nshared > nallrec / 2 && nallsim >= nMin) // accepted, FIXME
+      if(nshared > nallsim / 2 && nallsim >= nMin) // accepted
         nassoc++;
     }
 
     if(nallrec >= nMin) // reasonable
       if(nassoc < nAssoc)
         arec[nassoc]++;
-
-//    cerr << "  " << producer
-//         << " rv " << r - rec.begin() << " sim " << nassoc << endl;
   }
 }
 
@@ -425,10 +415,10 @@ void numberOfVertices(const vector<pair<double,double> > & points,
 
     // Stopping condition
     if(chi2 < getLambda(rec) ||
-       TMath::Prob(chi2 - getLambda(rec), points.size()) > 1e-3) // FIXME
+       TMath::Prob(chi2 - getLambda(rec), points.size()) > 1e-3)
     {
 #ifdef Debug
-      ofstream file("z.gnu");
+      ofstream file("../out/z.gnu");
       for(int k = 0; k < K ; k++)
         file << "set arrow from " << mu(k) << ",graph -0.03 to "
                                   << mu(k) << ",graph -0.01 lt 2" << endl;
@@ -462,7 +452,7 @@ void options(int arg, char **arc)
   sysShift   = 0.;
   ranShift   = 0.;
 
-  // FIXME
+  //
   nMin = 2;
 
   do
@@ -473,17 +463,17 @@ void options(int arg, char **arc)
       Mu = atof(arc[++i]);
     }
 
-    if(strcmp(arc[i],"-single")     == 0) 
-    {
-      generator = single;
-      Mu = 1.;
-      Multi = atoi(arc[++i]); 
-    }
-
     if(strcmp(arc[i],"-poissonian") == 0)
     {
       generator = poissonian;
       Mu = atof(arc[++i]);
+    }
+
+    if(strcmp(arc[i],"-single")     == 0)
+    {
+      generator = single;
+      Mu = 1.;
+      Multi = atoi(arc[++i]);
     }
 
     if(strcmp(arc[i],"-file") == 0)
@@ -531,7 +521,7 @@ int main(int arg, char **arc)
 
   cerr << fixed << setprecision(3);
 
-  filePythia.open("../out/minimumBias.dat");
+  filePythia.open("../data/minBias.dat");
 
   vector<vector<int> > asim(nMethods,vector<int>(nAssoc,0));
   vector<vector<int> > arec(nMethods,vector<int>(nAssoc,0));
@@ -553,10 +543,10 @@ int main(int arg, char **arc)
   if(!optimize && !tree && !sensitivity)
   {
     if(generator == single)
-      fileMicro.open("../out/micro.dat",ios::app);
+      fileMicro.open("../out/micro.dat"); //,ios::app);
 
     if(generator == fix)
-      fileMacro.open("../out/macro.dat",ios::app);
+      fileMacro.open("../out/macro.dat"); //,ios::app);
   }
 
   for(int ii = 0; ii < events / Mu; ii++)
@@ -598,34 +588,12 @@ int main(int arg, char **arc)
       clusters.push_back(pair<TVectorD,TVectorD>(mu,P));
     }
 
-    // Divisive method (standard)
-/*
-    {
-#ifdef Debug
-      cerr << " ------ divisive method ------" << endl;
-#endif
-      VertexCollection rec;
-      DivisiveMethod theDivisiveMethod;
-
-      // float zOffset, int nTrkMin, float zSeparation
-      theDivisiveMethod.run(points, rec, zOffset, nTrkMin, zSeparation);
-
-      evaluatePerformance(sim,rec, asim[divisive],
-                                   arec[divisive], msim0, divisive);
-    }
-*/
-
     // Advanced methods
     if(!optimize)
     {
 #ifdef Debug
       cerr << " ---- hierarchical clustering ----" << endl;
 #endif
-/*
-      PairGroupMethod thePairGroupMethod;
-      thePairGroupMethod.run(points, clusters, maxVertices);
-*/
-      // FIXME
       unsigned int nOptimal;
       vector<vector<int> > lists;
 
@@ -641,11 +609,17 @@ int main(int arg, char **arc)
 
       // kMeans
       numberOfVertices(points, clusters, rec, kMeans);
+#ifdef Debug
+      cerr << " kMeans";
+#endif
       evaluatePerformance(sim,rec, asim[kMeans],
                                    arec[kMeans], msim1, kMeans);
 
       // gaussianMixture
       numberOfVertices(points, clusters, rec, gaussianMixture);
+#ifdef Debug
+      cerr << " gaussianMixture";
+#endif
       evaluatePerformance(sim,rec, asim[gaussianMixture],
                                    arec[gaussianMixture], msim2,
                                    gaussianMixture);
@@ -656,12 +630,17 @@ int main(int arg, char **arc)
       TVectorD mu(K); mu = clusters[K].first;
       TVectorD P(K) ; P  = clusters[K].second;
 
+#ifdef Debug
+      cerr << " optimalTree";
+#endif
       theOptimalTree.run(K,points, mu,P, lists, rec);
       evaluatePerformance(sim,rec, asim[optimalTree],
                                    arec[optimalTree], msim3, optimalTree);
     }
 
 #ifdef Debug
+    int ret = system("cd ../gnu ; gnuplot event.gnu"); ret++;
+    cerr << " Look at ../gnu/event.eps..";
     while(getchar() == 0);
 #endif
   }
@@ -679,7 +658,7 @@ int main(int arg, char **arc)
   // Optimize
   if(optimize)
   {
-    ofstream fileOpt("../out/optimize.dat",ios::app);
+    ofstream fileOpt("../out/optimize.dat"); //,ios::app);
     fileOpt
          << " " << int(Mu + 0.5)
          << " " << zOffset << " " << nTrkMin << " " << zSeparation
@@ -694,7 +673,7 @@ int main(int arg, char **arc)
   // Tree
   if(tree)
   {
-    ofstream fileOpt("../out/tree.dat",ios::app);
+    ofstream fileOpt("../out/tree.dat"); //,ios::app);
     fileOpt
          << " " << int(Mu + 0.5)
          << " " << dMax
@@ -709,9 +688,9 @@ int main(int arg, char **arc)
   // Write out
   if(generator != single && !optimize && !tree)
   {
-  ofstream fileRes(resultName,ios::app);
+  ofstream fileRes(resultName); //,ios::app);
 
-  for(int method = divisive; method <= optimalTree; method++)
+  for(int method = kMeans; method <= optimalTree; method++)
   {
     double nsim=0., nrec=0.;
     for(int i = 0; i < nAssoc; i++)
@@ -721,7 +700,7 @@ int main(int arg, char **arc)
     }
 
     for(int i = 0; i < nAssoc; i++)
-      fileRes << " " << method
+      fileRes << " " << methodName[method]
               << " " << Mu 
               << " " << i
               << " " << asim[method][i] / nsim
