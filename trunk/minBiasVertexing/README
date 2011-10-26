@@ -1,0 +1,59 @@
+* Compilation
+
+ cd src ; make
+
+* Plain datafile for tests
+
+ Get minBias.dat.gz
+ gunzip minBias.dat
+ mv minBias.dat data/
+
+* Tests
+
+ # run vertex finder with fix number of (e.g. 4) pile-up events
+ # output is in ../out/macro.dat
+ ./vertexFinder -fix 4
+
+ # run vertex finder with Poissonian number distribution (e.g. Mu=6.1) of events
+ ./vertexFinder -poissonian 6.1
+
+ # run single events with given number of tracks (e.g. 15-25)
+ # output is in ../out/micro.dat
+ ./vertexFinder -single 20
+
+* Output file format
+
+ ../out/macro.dat (for each event):
+   method_name
+   average_number_simulated_vertices
+   z_rec-z_sim
+   fraction_of_found_tracks
+   fraction_of_lost_tracks
+
+ ../out/micro.dat (for each event):
+   method_name
+   number_simulated_tracks_in_the_single_vertex
+   z_rec-z_sim
+   fraction_of_found_tracks
+   fraction_of_lost_tracks
+
+ ../out/result.dat (summary):
+   method_name
+   average_number_simulated_vertices
+   number_of_sim-rec_associations
+   fraction_of_simulated_vertices
+   fraction_of_reconstructed_vertices 
+
+* Debug mode
+ recompile vertexFinder.cc with
+ #define Debug
+
+ while running detailed info is written, ../gnu/event.eps is produced
+
+* Other expert options
+
+ -bck <>  : backgroud events 
+ -sys <>  : systematic shift of the vertex position
+ -ran <>  : random shift of the vertex position
+ -nMin <> : minimal number of tracks require to form a vertex
+ -tree <> : build cluster tree with dMax
