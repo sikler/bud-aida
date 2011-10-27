@@ -14,7 +14,7 @@
 #include "../interface/KMeansMethod.h"
 #include "../interface/OptimalTree.h"
 
-#undef Debug
+#define Debug
 
 #define sqr(x) ((x) * (x))
 
@@ -159,7 +159,7 @@ void generatePoints(int K, vector<pair<double,double> > & points,
 #ifdef Debug
     if(n > 0)
     file0 << " set arrow from " << z0 << ", graph 0 to "
-                                << z0 << ", graph 1 nohead lt 3" << endl;
+                                << z0 << ", graph 1 nohead lt 3 lw 2" << endl;
 
     cerr << " z0 = " << z0 << " | n = " << n << endl;
 #endif
@@ -421,7 +421,7 @@ void numberOfVertices(const vector<pair<double,double> > & points,
       ofstream file("../out/z.gnu");
       for(int k = 0; k < K ; k++)
         file << "set arrow from " << mu(k) << ",graph -0.03 to "
-                                  << mu(k) << ",graph -0.01 lt 2" << endl;
+                                  << mu(k) << ",graph -0.01 lt 4 lw 3" << endl;
       file.close();
  
       cerr << " vertices = " << K << endl
