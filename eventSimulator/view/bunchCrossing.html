@@ -1,0 +1,171 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN"
+ "http://www.w3.org/TR/html4/loose.dtd">
+
+<html>
+
+<head>
+<title>Event viewer</title>
+
+<meta http-equiv="Content-type" content="text/html;charset=UTF-8">
+
+<script type="text/javascript">
+
+function resetAll()
+{
+  window.location.reload();
+
+  LiveApplet = document.getElementById("liveApplet");
+  LiveApplet.setVariable("iv",0); 
+
+  document.getElementById("iv").innerHTML = '-';
+  document.getElementById('it').innerHTML = '-';
+  document.getElementById('ih').innerHTML = '-';
+
+  document.getElementById('z0').innerHTML   = '-'; 
+  document.getElementById('d0').innerHTML   = '-';
+  document.getElementById('chi2').innerHTML = '-'; 
+  document.getElementById('ndf').innerHTML  = '-';
+
+  document.getElementById('eta').innerHTML = '-';
+  document.getElementById('pt').innerHTML  = '-';
+}
+
+
+function resetVertices()
+{
+  LiveApplet = document.getElementById("liveApplet");
+  LiveApplet.setVariable("iv",0); 
+
+//  alert("JozsiBacsi");
+}
+
+function parseForm(theForm)
+{
+  LiveApplet = document.getElementById("liveApplet");
+
+  if(theForm.rt.checked) LiveApplet.setVariable("rt",1);
+                    else LiveApplet.setVariable("rt",0);
+
+  if(theForm.st.checked) LiveApplet.setVariable("st",1);
+                    else LiveApplet.setVariable("st",0);
+
+  if(theForm.rv.checked) LiveApplet.setVariable("rv",1);
+                    else LiveApplet.setVariable("rv",0);
+
+  if(theForm.sv.checked) LiveApplet.setVariable("sv",1);
+                    else LiveApplet.setVariable("sv",0);
+
+  if(theForm.sd.checked) LiveApplet.setVariable("sd",1);
+                    else LiveApplet.setVariable("sd",0);
+}
+
+</script>
+
+</head>
+
+<!--body onLoad="window.resizeTo(1200,750);-->
+<body onLoad="document.getElementById('theForm').reset();
+              parseForm(document.getElementById('theForm'));">
+
+<table border="0">
+
+<tr>
+<td rowspan=3 valign=top>
+<applet id="liveApplet" name="liveApplet"
+        code="Live.class" width=950 height=700>
+<param name="cache_archive"    value="live.jar">
+
+<param name="INDEPENDENT_VARIABLES" value="{rt->1,st->0,rv->1,sv->0,sd->1,iv->0,it->0}">
+<param name="MAGNIFICATION"    value="3.">
+<param name="INITIAL_ROTATION" value="-45,75">
+<param name="INPUT_FILE"       value="bunchCrossing.m">
+<param name="INPUT_ARCHIVE"    value="bunchCrossing.zip">
+</applet>
+</td>
+
+<td align="left" valign="middle">
+ <font face="Arial,Helvetica" size="-1">
+ <input type="button" name="reload"
+          id="reload" value="Reload" onClick="resetAll();"> <br>
+ <input type="button" name="showall"
+          id="showall" value="Show all" onClick="resetVertices();">
+ </font>
+</td>
+
+<td align="left" valign="middle">
+ <form id="theForm" action="post">
+ <font face="Arial,Helvetica" size="-1">
+ <input type="checkbox" name="rt" checked
+  onclick="parseForm(this.form);"> <font color="red">  recTracks </font> <br>
+ <input type="checkbox" name="st"
+  onclick="parseForm(this.form);"> <font color="gray"> simTracks </font> <br>
+ <input type="checkbox" name="rv" checked
+  onclick="parseForm(this.form);"> <font color="gray"> recVertices </font> <br>
+ <input type="checkbox" name="sv"
+  onclick="parseForm(this.form);"> <font color="gray"> simVertices </font> <br>
+ <input type="checkbox" name="sd" checked
+  onclick="parseForm(this.form);"> <font color="gray"> detUnits  </font> 
+ </font>
+ </form>
+</td>
+
+</tr>
+
+<tr>
+
+<td valign=top colspan="2">
+<font face="Arial,Helvetica" size="-1">
+
+Vertex:<span id="iv" class="iv">-</span>
+Track:<span id="it">-</span>
+Hit:<span id="ih">-</span>
+<br>
+
+z0=<span id="z0">-</span> cm
+d0=<span id="d0">-</span> cm
+&chi;<sup>2</sup>/ndf=<span id="chi2">-</span>/<span id="ndf">-</span>
+<br>
+
+&eta;=<span id="eta">-</span>
+p<sub>T</sub>=<span id="pt">-</span> GeV/c
+
+</font>
+
+<applet id="liveApplet2" name="liveApplet2"
+        code="Live.class" width=300 height=500>
+<param name="cache_archive"    value="live.jar">
+<param name="INDEPENDENT_VARIABLES" value="{iv->0,it->0,ih->0}">
+<param name="INPUT_FILE"       value="clusters.m">
+<param name="INPUT_ARCHIVE"    value="clusters.zip">
+</applet>
+</td>
+
+<td>
+<iframe width="0" height="0" frameborder="0"
+        id="passClick" name="passClick" src="passClick.html">
+</iframe>
+</td>
+
+</tr>
+
+</table>
+
+<table width="100%"><tr>
+
+<td align="left">
+<font face="Arial,Helvetica" size="-1" color="gray">
+Ferenc Sikl&eacute;r, powered by
+<a href="http://www.vis.uni-stuttgart.de/~kraus/LiveGraphics3D/documentation.html#subsection:%20User-Quick" target="_blank">LiveGraphics3D</a>
+<img src=livetiny.gif alt="LiveGraphics3D">
+</font>
+</td>
+
+<td align="right">
+<a href="http://validator.w3.org/check?uri=referer"><img src="valid-html401.png" alt="Valid HTML 4.01 Transitional" height="15" width="44"></a>
+</td>
+
+</tr></table>
+
+</body>
+
+</html>

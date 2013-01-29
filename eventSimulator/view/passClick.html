@@ -1,0 +1,65 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN"
+ "http://www.w3.org/TR/html4/loose.dtd">
+
+<html>
+
+<head>
+
+<title></title>
+
+<meta http-equiv="Content-type" content="text/html;charset=UTF-8">
+
+<script type="text/javascript">
+
+function qs()
+{
+  var pos;
+  var query = window.location.search.substring(1);
+  var parms = query.split('&');
+
+  pos = parms[0].indexOf('='); var iv = parms[0].substring(pos+1);
+  pos = parms[1].indexOf('='); var it = parms[1].substring(pos+1);
+  pos = parms[2].indexOf('='); var ih = parms[2].substring(pos+1);
+
+  pos = parms[3].indexOf('='); var z0   = parms[3].substring(pos+1);
+  pos = parms[4].indexOf('='); var d0   = parms[4].substring(pos+1);
+  pos = parms[5].indexOf('='); var chi2 = parms[5].substring(pos+1);
+  pos = parms[6].indexOf('='); var ndf  = parms[6].substring(pos+1);
+
+  pos = parms[7].indexOf('='); var eta  = parms[7].substring(pos+1);
+  pos = parms[8].indexOf('='); var pt   = parms[8].substring(pos+1);
+
+  window.parent.document.getElementById('iv').innerHTML = iv;
+  window.parent.document.getElementById('it').innerHTML = it;
+  window.parent.document.getElementById('ih').innerHTML = ih;
+
+  window.parent.document.getElementById('z0').innerHTML   = z0;
+  window.parent.document.getElementById('d0').innerHTML   = d0;
+  window.parent.document.getElementById('chi2').innerHTML = chi2;
+  window.parent.document.getElementById('ndf').innerHTML  = ndf;
+
+  window.parent.document.getElementById('eta').innerHTML = eta;
+  window.parent.document.getElementById('pt').innerHTML  = pt;
+
+  LiveApplet  = window.parent.document.getElementById("liveApplet"); 
+  LiveApplet2 = window.parent.document.getElementById("liveApplet2"); 
+
+  LiveApplet2.setVariable("iv",iv);
+  LiveApplet2.setVariable("it",it);
+  LiveApplet2.setVariable("ih",ih);
+
+  LiveApplet.setVariable("iv",iv);
+}
+
+</script>
+
+</head>
+
+<body>
+
+<script type="text/javascript">
+ setTimeout("qs();",0); 
+</script>
+
+</body>
+</html>
