@@ -3,13 +3,21 @@ CFLAGS = -Wall -O3 `root-config --cflags`
 
 LIBS = -lm `root-config --libs`
 
-all : ../bin/vertexFinder
+all : ../bin/vertexFinder ../lib/libminBiasVertexing.a
 
-../bin/vertexFinder : vertexFinder.o \
-                      PairGroupMethod.o FastPairwiseNearestNeighbor.o \
-                      NeighborJoining.o \
-                      GaussianMixture.o KMeansMethod.o OptimalTree.o
+OBJS = PairGroupMethod.o FastPairwiseNearestNeighbor.o NeighborJoining.o \
+       GaussianMixture.o KMeansMethod.o OptimalTree.o
+
+
+../bin/vertexFinder : vertexFinder.o $(OBJS)
 	g++ $(CFLAGS) -o $@ $^ $(LIBS)
+
+../lib/libminBiasVertexing.so : $(OBJS)
+	g++ -fPIC -o $@ $^ $(LIBS) -shared
+
+../lib/libminBiasVertexing.a : $(OBJS)
+	ar rs $@ $^
+
 
 vertexFinder.o : vertexFinder.cc
 	g++ $(CFLAGS) -c -o $@ $<
