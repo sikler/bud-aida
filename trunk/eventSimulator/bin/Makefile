@@ -14,7 +14,7 @@ NEVENTS = 1000
 
 ../out/bunchCrossing.m : plotEvents \
 				../out/bunchCrossings_reco.root
-	$(PRE) ./$< -event 5 -i ../out/bunchCrossings_reco.root
+	$(PRE) ./$< -event 6 -i ../out/bunchCrossings_reco.root
 
 ###############################################################################
 #../out/gains.dat : calibrateGain \

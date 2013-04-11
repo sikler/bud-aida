@@ -192,8 +192,8 @@ double dx = 0,dy = 0,dz = 0;
 
     ostringstream url;
 
-    url << "http://sikler.web.cern.ch/sikler/bud-aida/passClick.html";
-//    url << "http://localhost:8000/view/passClick.html";
+//    url << "http://sikler.web.cern.ch/sikler/bud-aida/passClick.html";
+    url << "http://localhost:8000/view/passClick.html";
 
     ostringstream vth;
     vth << "?iv=" << iv
@@ -293,8 +293,8 @@ double dx = 0,dy = 0,dz = 0;
 
         ostringstream url;
  
-        url << "http://sikler.web.cern.ch/sikler/bud-aida/passClick.html";
-//        url << "http://localhost:8000/view/passClick.html";
+//        url << "http://sikler.web.cern.ch/sikler/bud-aida/passClick.html";
+        url << "http://localhost:8000/view/passClick.html";
 
         ostringstream vth;
         vth << "?iv=" << iv
@@ -424,8 +424,8 @@ if(unit->isPixel) // FIXME
 
     ostringstream url;
 
-    url << "http://sikler.web.cern.ch/sikler/bud-aida/passClick.html";
-//    url << "http://localhost:8000/view/passClick.html";
+//    url << "http://sikler.web.cern.ch/sikler/bud-aida/passClick.html";
+    url << "http://localhost:8000/view/passClick.html";
 
     ostringstream vth;
     vth << "?iv=" << iv
@@ -523,8 +523,8 @@ if(unit->isPixel) // FIXME
              << "&pt="     << hit->pt;
 
         ostringstream url;
-        url << "http://sikler.web.cern.ch/sikler/bud-aida/passClick.html";
-//        url << "http://localhost:8000/view/passClick.html";
+//        url << "http://sikler.web.cern.ch/sikler/bud-aida/passClick.html";
+        url << "http://localhost:8000/view/passClick.html";
 
         ostringstream vth;
         vth << "?iv=" << iv
