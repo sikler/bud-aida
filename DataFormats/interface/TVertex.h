@@ -2,9 +2,9 @@
 #define _TVertex_h_
 
 #include "TObject.h"
-#include <vector>
-
 #include "TTrack.h"
+
+#include <vector>
 
 class TVertex : public TObject
 {
@@ -14,8 +14,9 @@ class TVertex : public TObject
 
   std::vector<TTrack> tracks;
 
-  float z;
-  short int processId;  
+  float z, sigma_z;
+
+  short int processId;
 
   ClassDef(TVertex,1)
 };

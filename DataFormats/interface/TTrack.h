@@ -2,15 +2,10 @@
 #define _TTrack_h_
 
 #include <utility>
+
 #include "TObject.h"
 
-#include "TPixelHit.h"
-#include "TStripHit.h"
-
-#include "TStripHit.h"
-
-#include "Coord.h"
-
+#include "Point.h"
 #include "Hit.h" 
 
 class TTrack : public TObject
@@ -27,17 +22,13 @@ class TTrack : public TObject
   float chi2;
   int    ndf;
 
-  float z;
+  float z, sigma_z;
   float d0;
 
   std::pair<float,float> epsilon;
 
-  std::vector<TPixelHit> pixelHits;
-  std::vector<TStripHit> stripHits;
-
-  std::vector<Coord> hits;
-
-  std::vector<Hit> lhits;
+  std::vector<Point> points;
+  std::vector<Hit>   hits;
 
   short int pdgId;
 

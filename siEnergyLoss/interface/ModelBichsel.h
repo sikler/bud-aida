@@ -1,4 +1,9 @@
+#ifndef _ModelBichsel_h_
+#define _ModelBichsel_h_
+
 #include <fstream>
+
+class RandomGenerator;
 
 class ModelBichsel
 {
@@ -7,17 +12,14 @@ class ModelBichsel
     ~ModelBichsel();
 
     void prepare(double betaGamma);
+
     double generate(double thickness);
     double generateDemo(double thickness, std::ofstream & file);
-    void check();
 
-    double getGaussRandom();
-    
   private:
     void readMeanNumberOfCollisions(const char * elem);
     void readCumulativeCrossSection(const char * elem);
-    double getFlatRandom();
-   
+
     #define mncRows 51
     double mnc[3][mncRows];
 
@@ -28,4 +30,8 @@ class ModelBichsel
 
     int ic;
     double xc, sigmaT;
+
+    RandomGenerator * theRandom;
 };
+
+#endif

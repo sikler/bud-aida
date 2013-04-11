@@ -1,15 +1,17 @@
 #include "../interface/ClusterGenerator.h"
-
-//#include "../interface/ElossData.h"
 #include "../interface/TouchedChannels.h"
 #include "../interface/Levels.h"
-
 #include "../interface/ModelBichsel.h"
+
+#include "../../DataFormats/interface/RandomGenerator.h"
+#include "../../DataFormats/interface/TLayer.h"
 
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
 #include <iomanip>
+
+#include <algorithm>
 
 #define sqr(x) ((x) * (x))
 
@@ -18,31 +20,33 @@ using namespace std;
 /*****************************************************************************/
 ClusterGenerator::ClusterGenerator()
 {
-  theModel = new ModelBichsel("Si");
+  theModel  = new ModelBichsel("Si");
+  theRandom = new RandomGenerator();
 }
 
 /*****************************************************************************/
 ClusterGenerator::~ClusterGenerator()
 {
   delete theModel;
+  delete theRandom;
 }
 
 /*****************************************************************************/
-double ClusterGenerator::getFlatRandom()
+struct sortByPos
 {
-  return drand48();
-}
-
-/****************************************************************************/
-double ClusterGenerator::getGaussRandom()
-{
-  return sqrt(-2*log(getFlatRandom())) * cos(M_PI*getFlatRandom());
-}
+  bool operator() (const Pixel & a, const Pixel & b) const
+  {
+    return (a.meas.x[0] < b.meas.x[0]);
+  }
+};
 
 /*****************************************************************************/
-void ClusterGenerator::addCoupling(Hit & hit)
+void ClusterGenerator::addCoupling(Hit & hit, TLayer * unit)
 {
   Pixel empty;
+ 
+  // Sort hit.allPixels according to meas.x[0] value
+  sort(hit.allPixels.begin(), hit.allPixels.end(), sortByPos());
 
   // First 
   empty.meas.x[0] = hit.allPixels.front().meas.x[0] - 1;
@@ -56,7 +60,7 @@ void ClusterGenerator::addCoupling(Hit & hit)
   empty.meas.y    = 0.;
   hit.allPixels.push_back(empty);
 
-  double c = hit.coupling;
+  double c = unit->coupling;
   vector<double> coup(hit.allPixels.size(), 0.);
 
   int i = 1;
@@ -120,59 +124,35 @@ void ClusterGenerator::matchOrAdd(vector<Pixel> & pixels,
 
 /*****************************************************************************/
 Hit ClusterGenerator::create
-  (int type, double betaGamma, double theta, double phi)
+  (double betaGamma, double theta, double phi, 
+   TChipId & chipId, TLayer * mat, int ilayer)
 {
   Hit hit;
 
-  ///////////////
-  {
-    PixelUnit unit;
-
-    unit.diffSigma = 5e-4; // FIXME
- 
-    unit.nrows    = 100;
-    unit.ncolumns = 100;
-    unit.pitch[0] = 100e-4;
-
-    if(type == 0) // pixel
-    {
-      unit.pitch[1] =  200e-4;
-
-      hit.coupling = 0.;
-    }
-    else
-    {
-      unit.pitch[1] = 10; // strip, 10 cm
-
-      hit.coupling = Coupling;
-    }
-
-    unit.pitch[2] = 300e-4;
-
-    hit.unit = unit;
-  }
+  hit.ilayer = ilayer;
+  hit.chipId = chipId;
 
   theModel->prepare(betaGamma);
 
   double dpitch[2];
-  dpitch[0] = hit.unit.pitch[2] / hit.unit.pitch[0] * fabs(tan(phi)); // FIXME
-  dpitch[1] = hit.unit.pitch[2] / hit.unit.pitch[1] * fabs(tan(theta));
+  dpitch[0] = mat->pitch[2] / mat->pitch[0] * fabs(tan(phi));
+  dpitch[1] = mat->pitch[2] / mat->pitch[1] * fabs(tan(theta));
 
-  // ExB
-  if(getFlatRandom() < 0.5) dpitch[0] += 0.5; 
-                       else dpitch[0] -= 0.5;
+  // ExB FIXME EXB
+  if(theRandom->getFlatRandom() < 0.5) dpitch[0] += 0.5; 
+                                  else dpitch[0] -= 0.5;
 
-  dpitch[0] = fabs(dpitch[0]);
+  dpitch[0] = fabs(dpitch[0]); // FIXME????
 
   ///////////////
-  double endpoint[2][2]; // ordered!
+  double endpoint[2][2]; // ordered
 
   for(int k = 0; k < 2; k++)
   {
     if(k == 0) 
-      endpoint[0][k] = hit.unit.nrows/2    + getFlatRandom();
+      endpoint[0][k] = mat->nrows/2    + theRandom->getFlatRandom();
     else
-      endpoint[0][k] = hit.unit.ncolumns/2 + getFlatRandom();
+      endpoint[0][k] = mat->ncolumns/2 + theRandom->getFlatRandom();
 
     endpoint[1][k] = endpoint[0][k] + dpitch[k];
   }
@@ -182,9 +162,9 @@ Hit ClusterGenerator::create
     double dpos[3];
     for(int k = 0; k < 3; k++)
       if(k < 2)
-        dpos[k] = (endpoint[1][k] - endpoint[0][k]) * hit.unit.pitch[k];
+        dpos[k] = (endpoint[1][k] - endpoint[0][k]) * mat->pitch[k];
       else
-        dpos[k] =                                     hit.unit.pitch[k];
+        dpos[k] =                                     mat->pitch[k];
 
     hit.length = sqrt(sqr(dpos[0]) + sqr(dpos[1]) + sqr(dpos[2])); 
     hit.lambda = sqrt(sqr(dpos[0]) + sqr(dpos[1]));
@@ -194,14 +174,14 @@ Hit ClusterGenerator::create
   }
 
   ///////////////
-  TouchedChannels theTouchedChannels(hit);
-  hit.allPixels = theTouchedChannels.findChannels(endpoint);
-
+  TouchedChannels theTouchedChannels(hit, mat);
   hit.allPixels.reserve(100);
+  hit.allPixels = theTouchedChannels.findChannels(endpoint);
 
   double simDelta = 0, recDelta = 0.;
 
-  bool shift = (getFlatRandom() < 0.5);
+  // drift to which side? FIXME
+  bool shift = (theRandom->getFlatRandom() < 0.5);
 
   int nj = hit.allPixels.size();
   for(int jj = 0; jj < nj; jj++)
@@ -228,24 +208,26 @@ Hit ClusterGenerator::create
                 pixel->meas.c[1].pos[1] * (  i + 0.5)) / n;
 
       if(shift)
-      pos[2] = (hit.unit.pitch[2] * (n-i - 0.5) +
-                                0 * (  i + 0.5)) / n;
+      pos[2] = (mat->pitch[2] * (n-i - 0.5) +
+                            0 * (  i + 0.5)) / n;
       else
-      pos[2] = (                0 * (n-i - 0.5) +
-                hit.unit.pitch[2] * (  i + 0.5)) / n;
+      pos[2] = (            0 * (n-i - 0.5) +
+                mat->pitch[2] * (  i + 0.5)) / n;
 
-      // In pitch units 
-      double sigmaX = hit.unit.diffSigma / hit.unit.pitch[0]
-                           * sqrt(pos[2] / hit.unit.pitch[2]) * 1.01379;// FIXME
-      double sigmaY = hit.unit.diffSigma / hit.unit.pitch[1]
-                           * sqrt(pos[2] / hit.unit.pitch[2]);
+      // In pitch units
+      double sigmaX = mat->diffSigma / mat->pitch[0]
+                       * sqrt(pos[2] / mat->pitch[2]);
+      // * 1.01379;// with ExB FIXME
+
+      double sigmaY = mat->diffSigma / mat->pitch[1]
+                       * sqrt(pos[2] / mat->pitch[2]);
 
       for(int x0 = pixel->meas.x[0] - 1; x0 <= pixel->meas.x[0] + 1; x0++)
       for(int y0 = pixel->meas.x[1] - 1; y0 <= pixel->meas.x[1] + 1; y0++)
       {
         double integral = getIntegral(pos[0], x0,x0+1, sigmaX) *
-             (type == 0 ? getIntegral(pos[1], y0,y0+1, sigmaY)
-                        : (y0 == pixel->meas.x[1] ? 1 : 0 ) );
+          (mat->isPixel ? getIntegral(pos[1], y0,y0+1, sigmaY)
+                         : (y0 == pixel->meas.x[1] ? 1 : 0 ) );
 
         double Delta = integral * dDelta;
 
@@ -256,29 +238,30 @@ Hit ClusterGenerator::create
   }
 
   // add coupling
-  if(hit.coupling > 0.)
-    addCoupling(hit);
+  if(!mat->isPixel)
+    addCoupling(hit, mat);
 
-  // FIXME add noise
+  // add noise
   for(vector<Pixel>::iterator pixel = hit.allPixels.begin();
                               pixel!= hit.allPixels.end(); pixel++)
   {
-    pixel->meas.y += theModel->getGaussRandom() * Noise;
-    simDelta += pixel->meas.y; // FIXME
+    pixel->meas.y *= mat->gain[chipId.code];
+    pixel->meas.y += theRandom->getGaussRandom() * mat->noise;
+
+    simDelta += pixel->meas.y;
   }
 
   // overflow
   for(vector<Pixel>::iterator pixel = hit.allPixels.begin();
                               pixel!= hit.allPixels.end(); pixel++)
-    if(pixel->meas.y > Overflow)
-       pixel->meas.y = Overflow + 0.1;
+    if(pixel->meas.y > mat->overflow)
+       pixel->meas.y = mat->overflow + 1e-4; // add 0.1 keV
 
   // Threshold, remove if below
   for(vector<Pixel>::iterator pixel = hit.allPixels.begin();
                               pixel!= hit.allPixels.end(); /* empty */)
   {
-    // threshold, remove if below
-    if(pixel->meas.y <  Threshold)
+    if(pixel->meas.y < mat->threshold)
       hit.allPixels.erase(pixel);
     else
     {
@@ -288,16 +271,13 @@ Hit ClusterGenerator::create
     }
   }
 
-  hit.dpos[0] = (endpoint[1][0] - endpoint[0][0]);
-  hit.dpos[1] = (endpoint[1][1] - endpoint[0][1]);
+  hit.dpos[0]     = (endpoint[1][0] - endpoint[0][0]);
+  hit.dpos[1]     = (endpoint[1][1] - endpoint[0][1]);
 
   hit.pos_orig[0] = (endpoint[0][0] + endpoint[1][0])/2;
   hit.pos_orig[1] = (endpoint[0][1] + endpoint[1][1])/2;
 
-/*
-  cerr << " filled / all = " << hit.filledPixels.size() 
-                      << " " << hit.allPixels.size() << endl;
-*/
+  hit.charge_orig = simDelta;
 
   return hit;
 }

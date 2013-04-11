@@ -1,10 +1,14 @@
-#ifndef _KalmanTracking_
-#define _KalmanTracking_
+#ifndef _KalmanTracking_h_
+#define _KalmanTracking_h_
 
-#include "CLHEP/Matrix/Matrix.h"
-#include "CLHEP/Matrix/Vector.h"
+#include <fstream>
+#include <cmath>
 
-#include "../../DataFormats/interface/Coord.h"
+#include "../../DataFormats/interface/Point.h"
+#include "../../DataFormats/interface/TLayer.h"
+
+#include "TMatrixD.h"
+#include "TVectorD.h"
 
 // Number of track parameters
 #define nPars 5
@@ -16,55 +20,7 @@
 #define nDims 3
 
 using namespace std;
-using namespace CLHEP;
 
-/*****************************************************************************/
-class Material
-{
- public:
-  double radius;
-  double halfLength; // FIXME new
-  double sigma_rphi;
-  double sigma_z;
-  double thickness;
-
-  void print() const
-  {
-    cerr << " r=" << radius
-         << " l/2=" << halfLength
-         << " sigma_rphi=" << sigma_rphi
-         << " sigma_z=" << sigma_z
-         << " thickness=" << thickness
-         << endl;
-  }
-};
-
-/*****************************************************************************/
-/*
-class Coord
-{
- public:
-  int q;
-  double x[nDims];
-  double pt; // auxiliary, sometimes needed
-  double pz;
-  double eta;
-  double p_; // total momentum
-  double p[nDims];
-
-  void print()
-  {
-    cerr << " q="  << q
-         << " p=" <<  p_;
-
-    for(int i = 0; i < nDims; i++)
-      if(i == 0) cerr << " p=(" << p[i];
-            else cerr << ","    << p[i];
-
-    cerr << ")" << endl;
-  }
-};
-*/
 
 /*****************************************************************************/
 class State
@@ -72,15 +28,15 @@ class State
  public:
   State()
   {
-    HepMatrix F_(nPars,nPars); F = F_;
+    TMatrixD F_(nPars,nPars); F.ResizeTo(F_); F = F_;
 
-    HepVector x_(nPars); x = x_;
-    HepVector r_(nMeas); r = r_;
+    TVectorD x_(nPars); x.ResizeTo(x_); x = x_;
+    TVectorD r_(nMeas); r.ResizeTo(r_); r = r_;
 
-    HepMatrix C_(nPars,nPars); C = C_;
-    HepMatrix R_(nMeas,nMeas); R = R_;
+    TMatrixD C_(nPars,nPars); C.ResizeTo(C_); C = C_;
+    TMatrixD R_(nMeas,nMeas); R.ResizeTo(R_); R = R_;
 
-    Material material_;
+    TLayer material_;
     material_.radius     = 0.;
     material_.sigma_rphi = 0.;
     material_.sigma_z    = 0.;
@@ -90,13 +46,13 @@ class State
 
   double m;
 
-  HepMatrix F;
+  TMatrixD F;
 
-  HepVector x; // state
-  HepVector r; // residual
+  TVectorD x; // state
+  TVectorD r; // residual
 
-  HepMatrix C; // covariance of state
-  HepMatrix R; // covariance of residuals
+  TMatrixD C; // covariance of state
+  TMatrixD R; // covariance of residuals
 
   double getKappa() { return x[0]; }
   double getTheta() { return x[1]; }
@@ -110,7 +66,7 @@ class State
   void setRPhi (double value) { x[3] = value; }
   void setZ    (double value) { x[4] = value; }
 
-  Material material;
+  TLayer material; // FIXME REMOVE!!!!
 
   double xpos()
   {
@@ -155,62 +111,74 @@ class Layer
 class TVertex;
 class TTrack;
 
-class Coord;
+class Point;
 class State;
 
 class ClusterGenerator;
+class RandomGenerator;
 
 class KalmanTracking
 {
  public:
-  KalmanTracking();
+  KalmanTracking(std::vector<TLayer> & materials, float gainHalfWidth_, bool simu);
+  virtual ~KalmanTracking();
  
-  bool process(TTrack & simTrack, TTrack & recTrack);
+  bool process(TTrack & simTrack, TTrack & recTrack); // TO BE REMOVED
+
+//  bool simulate   (TTrack & simTrack);
+//  bool reconstruct(TTrack & simTrack, TTrack & recTrack); // ??
 
  private:
-  void readMaterial(vector<Material> & material);
+  void readMaterial(vector<TLayer> & material);
 
-  void convertToParameters(Coord & coord, State & state);
-  void convertToCoordinates(State & state, Coord & coord);
-
-  double getFlatRandom();
-  double getGaussRandom();
+  void convertToParameters(Point & coord, State & state);
+  void convertToCoordinates(State & state, Point & coord);
 
   double multiScatt(State & state, int flag);
   double energyLoss(State & state, int flag);
 
   State makeRechit(State & state);
 
-  bool propagate(State & state, const Material & material);
+  bool propagate(State & state, const TLayer & material);
 
   double getAngle(double a[], double b[], double c[]);
 
   State fitCircle(vector<Layer> & layers);
 
-  CLHEP::HepMatrix calculateF(State & rechit, Material & material);
-  CLHEP::HepMatrix calculateQ(State & state, const HepMatrix & F);
+  TMatrixD calculateF(State & rechit, TLayer & material);
+
+  TMatrixD outerProduct(const TVectorD & a, const TVectorD & b);
+
+  TMatrixD calculateQ(State & state, const TMatrixD & F);
 
   double getChi2(const State & state);
 
   void fit   (vector<Layer> & layers);
+
+  void set(TMatrixD & a, TMatrixD & b);
+
   void smooth(vector<Layer> & layers);
 
   State generate(TTrack & track);
 
   void simulate(TTrack & track, vector<Layer> & layers);
-  vector<Coord> reconstruct(vector<Layer> & layers, double & c);
+  vector<Point> reconstruct(vector<Layer> & layers, double & c, int pdgId);
 
   // Material: silicon
   // Units: cm, GeV, T
   double B;
-  double rho; // g cm^-3
   double X0;
 
-  vector<Material> material;
+  float gainHalfWidth;
 
-  HepMatrix gR;
+  vector<TLayer> material;
+
+  TMatrixD gR;
+
+  std::ofstream fileChi;
 
   ClusterGenerator * clusterGenerator;
+  RandomGenerator  * theRandom;
 };
 
 #endif

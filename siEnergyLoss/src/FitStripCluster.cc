@@ -3,11 +3,13 @@
 #include <cmath>
 #include <vector>
 #include <fstream>
+#include <iostream>
 
-#define Sqr(x) ((x) * (x))
+#include "TDecompLU.h"
+
+#define sqr(x) ((x) * (x))
 
 using namespace std;
-using namespace CLHEP;
 
 enum { isNormal, isBelow, isOver };
 
@@ -19,12 +21,9 @@ FitStripCluster::FitStripCluster
 {
   iSigma  = 1./Sigma;
 
-  // FIXME
-//  Coupling += 4/100. / sqrt(2 * M_PI);
-
-  a00 =       Sqr(      Coupling) * Sqr(iSigma);
-  a11 =       Sqr(1 - 2*Coupling) * Sqr(iSigma);
-  a01 = Coupling*(1 - 2*Coupling) * Sqr(iSigma);
+  a00 =       sqr(      Coupling) * sqr(iSigma);
+  a11 =       sqr(1 - 2*Coupling) * sqr(iSigma);
+  a01 = Coupling*(1 - 2*Coupling) * sqr(iSigma);
 
   a0 =        Coupling  * iSigma;
   a1 = (1 - 2*Coupling) * iSigma;
@@ -74,8 +73,8 @@ double FitStripCluster::getChi2(const vector<double> & x)
 
 /*****************************************************************************/
 void FitStripCluster::getAlphaBeta(const vector<double> & x,
-                              HepMatrix & alpha,
-                              HepVector & beta,
+                              TMatrixD & alpha,
+                              TVectorD & beta,
                              const vector<bool> & isFix)
 {
   vector<double> y(npar, 0.);
@@ -141,17 +140,30 @@ void FitStripCluster::getAlphaBeta(const vector<double> & x,
     if(!isFix[i  ])
     if(x[i] < 0)
     {
-      alpha[i][i] += 2*Sqr(iSigma);
+      alpha[i][i] += 2*sqr(iSigma);
 
       q = x[i] * iSigma;
       beta[i] += 2 * q*iSigma;
     }
   }
 
+  // Calculate average of non-zero matrix elements (with fabs)
+  double s=0., n=0.;
+
+  for(int i = 0; i < npar; i++) 
+  for(int j = 0; j < npar; j++)
+    if(alpha[i][j] > 0)
+    {
+      s += fabs(alpha[i][j]);
+      n++;
+    }
+
+  s /= n;
+
   for(int i = 0; i < npar; i++)
-  if(isFix[i])
+  if(isFix[i] || alpha[i][i] == 0.)
   {
-    alpha[i][i] = 1.;
+    alpha[i][i] = s;
 
     beta[i] = 0.;
   }
@@ -161,9 +173,6 @@ void FitStripCluster::getAlphaBeta(const vector<double> & x,
 int FitStripCluster::run(double & chi2, pair<double,double> & result,
                          vector<double> & x)
 {
-//  vector<double> x;
-
-//  double over = false;
   for(vector<pair<double,int> >::const_iterator ib = b.begin();
                                                 ib!= b.end(); ib++) 
   {
@@ -176,31 +185,39 @@ int FitStripCluster::run(double & chi2, pair<double,double> & result,
 
   bool ok = false;
 
-  HepMatrix hessian(npar,npar);
+  TMatrixD hessian(npar,npar);
 
   int iter = 0;
   
   do
   {
     double old = getChi2(x);
-
     double diff;
 
     do
     {
-      HepMatrix alpha(npar,npar, 0.);
-      HepVector beta (npar, 0.);
+      TMatrixD alpha(npar,npar); alpha.Zero();
+      TVectorD beta(npar); beta.Zero();
 
       getAlphaBeta(x, alpha,beta, isFix);
 
-      HepVector delta = solve(alpha, -beta);
+      // Fix alpha if singular
+      if(alpha.Determinant() == 0.) 
+      {
+        for(int i = 0; i < npar; i++)
+        for(int j = 0; j < npar; j++)
+          if(i != j) alpha[i][j] = 0.;
+      }
 
+      TDecompLU lu(alpha);
+
+      bool ok; TVectorD delta = lu.Solve(beta, ok);
   
       vector<double> x_(npar);
       double lambda = 1., next;
 
       for(int i = 0; i < npar; i++)
-         x_[i] = x[i] + lambda * delta[i];
+         x_[i] = x[i] - lambda * delta[i];
 
       next = getChi2(x_);
 
@@ -235,9 +252,8 @@ int FitStripCluster::run(double & chi2, pair<double,double> & result,
 
   if(iter >= 100) cerr << "[" << iter << "]" << endl;
 
-  hessian /= 2;
-  int flag;
-  hessian.invert(flag);
+  hessian *= 1./2;
+  hessian.Invert();
 
   double var2 = 0.;
   for(int i = 0; i < npar; i++)

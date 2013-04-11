@@ -7,7 +7,9 @@
 #include "TObject.h"
 
 #include "Pixel.h"
-#include "PixelUnit.h"
+#include "TChipId.h"
+
+class TChipId;
 
 class Hit : public TObject
 {
@@ -20,13 +22,13 @@ class Hit : public TObject
 
   double dpos[2], pos_orig[2], pos[2];   // 2D [pitch]
   double shift[2];                       // shift due to drift [pitch]
-  double charge_orig, charge;            // [keV]
-
-  double threshold;                      // [keV] 
-  double overflow;                       // [keV] 
-  double coupling;
+  double charge_orig, charge;            // [MeV]
 
   double error[3][3];
+
+  int ilayer;
+  TChipId chipId;
+  bool hasOverflow;
 
   std::vector<Pixel> filledPixels; // only those which have adc value
   std::vector<Pixel> allPixels;    // all: add missing touched
@@ -43,9 +45,6 @@ class Hit : public TObject
                     << " pos[1]=" << pos[1] << std::endl;
     std::cerr << " hit : ncha=" << allPixels.size()
                   << " charge=" << charge
-                  << " thr= " << threshold
-                  << " ovf=" << overflow
-                  << " coupling=" << coupling
                   << std::endl;
     for(std::vector<Pixel>::const_iterator pixel = allPixels.begin();
                                            pixel!= allPixels.end(); pixel++)
@@ -56,8 +55,6 @@ class Hit : public TObject
                        << " l=" << pixel->calc.l
                        << std::endl;
   }
-
-  PixelUnit unit;
 
   ClassDef(Hit,1)
 };

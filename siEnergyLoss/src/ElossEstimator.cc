@@ -1,13 +1,9 @@
+#include "../interface/Levels.h"
 #include "../interface/ElossEstimator.h"
-
-#include "../interface/ModelBichsel.h"
-#include "../interface/MostProbable.h"
 
 #include "../../DataFormats/interface/TTrack.h"
 
 #include <cmath>
-#include <cstdlib>
-
 #include <iostream>
 #include <fstream>
 #include <algorithm>
@@ -15,23 +11,7 @@
 
 using namespace std;
 
-#define nTracks 100000
-
-#define Sqr(x) ((x) * (x))
-
-struct Layer_t {
-  double depth; // cm
-  double gain;  // number
-};
-
-vector<Layer_t> layers;
-int nLayers;
-
-vector<vector<double> > tracks;
-
-double mass[2] = {0.139, 0.493};
-double p = 0.8;
-double eps;
+#define sqr(x) ((x) * (x))
 
 /*****************************************************************************/
 ElossEstimator::ElossEstimator()
@@ -46,146 +26,331 @@ ElossEstimator::~ElossEstimator()
 /*****************************************************************************/
 inline double ElossEstimator::sigmaD(double y)
 {
-  double sigma0 = 2.0e-3;
-  double b = 0.095;
-
-  return sigma0 + b * y;
+  return Sigma0 + b * y;
 }
 
 /*****************************************************************************/
-double ElossEstimator::logLikelihood(double epsilon, double y, double l)
+double ElossEstimator::logLikelihood(double epsilon, double y,
+                                     double l, bool over)
 {
-  double nu = 0.65;
-
-  // noise
-  double sn = 3e-3; // MeV
-
   // calculate effective path
-  double a  = 0.07;   //
-  double l0 = 300e-4; // cm
   double ls = l * (1 + a *log(l/l0));
-
   double Delta = epsilon * ls;
 
   double sD  = sigmaD(y);
-  //double sDD = sigmaD(Delta);
-
-  double s   = sqrt(sD *sD  + sn*sn);
-  //double s0  = sqrt(sDD*sDD + sn*sn);
+  double s   = sqrt(sD *sD  + Noise*Noise);
 
   double chi2;
-  if(Delta < y - nu * s) chi2 = - 2*nu * (Delta - y)/s - nu*nu;
-                    else chi2 =      Sqr((Delta - y))/ (s*s);
 
-//  return -2*log( exp(-chi2/2) / (s/s0) );
+  if(!over)
+  {
+    if(Delta < y - Nu * s) chi2 = - 2*Nu * (Delta - y)/s - Nu*Nu;
+                      else chi2 =      sqr((Delta - y))/ (s*s);
+  }
+  else
+  {
+    if(Delta < y + Nu * s) chi2 = - (Delta - y)/s + 1;
+                      else chi2 = 0.;
+  }
+
   return -2*log( exp(-chi2/2) / s);
 }
 
 /****************************************************************************/
-double ElossEstimator::getChi2(double gain, const vector<double> & hits, double l)
+double ElossEstimator::getChi2Gain
+  (double gain, const vector<TSlimMeasurement> & hits)
 {
   double chi2 = 0.;
 
-  for(vector<double>::const_iterator hit = hits.begin();
-                                     hit!= hits.end(); hit++)
-    chi2 += logLikelihood(eps, gain * (*hit), l);
+  for(vector<TSlimMeasurement>::const_iterator hit = hits.begin();
+                                               hit!= hits.end(); hit++)
+  if(!hit->hasOverflow && hit->epsilon < 10 && hit->path < 2) // restrict
+    chi2 += logLikelihood(hit->epsilon, gain * hit->energy,
+                          hit->path, hit->hasOverflow);
 
   return chi2;
 }
 
 /****************************************************************************/
-double ElossEstimator::getChi2(double epsilon, const vector<pair<double,double> > & hits)
+double ElossEstimator::getChi2Epsilon
+  (double epsilon, const vector<TSlimMeasurement> & hits)
 {
   double chi2 = 0.;
 
-  for(vector<pair<double,double> >::const_iterator hit = hits.begin();
-                                                   hit!= hits.end(); hit++)
-    chi2 += logLikelihood(epsilon, hit->first, hit->second);
+  for(vector<TSlimMeasurement>::const_iterator hit = hits.begin();
+                                               hit!= hits.end(); hit++)
+    chi2 += logLikelihood(epsilon, hit->energy, hit->path, hit->hasOverflow);
 
   return chi2;
 }
 
 /****************************************************************************/
-void ElossEstimator::calibrateGains(int pass)
+void ElossEstimator::getValuesByVaryingGain
+  (const vector<TSlimMeasurement> & hits,
+   double gain, vector<double> & val)
 {
-  char name[256];
-  sprintf(name,"../out/gains_%d.dat",pass);
+  const double dg = 1e-4;
 
-  ofstream file(name);
+  // Values
+  val[0] =  getChi2Gain(gain - dg, hits);
+  val[1] =  getChi2Gain(gain     , hits);
+  val[2] =  getChi2Gain(gain + dg, hits);
 
-  for(int j = 0; j < nLayers; j++)
+  // Derivatives
+  double sec = (val[2] + val[0] - 2*val[1]) / (dg * dg);
+  double fir = (val[2] - val[0]) / (2 * dg);
+
+  val[0] = val[1]; // central value
+  val[1] = fir;    // first derivative
+  val[2] = sec;    // second derivative
+}
+
+/****************************************************************************/
+void ElossEstimator::getValuesByVaryingEpsilon
+  (const vector<TSlimMeasurement> & hits,
+   double epsilon, vector<double> & val)
+{
+  const double de = 1e-3;
+
+  // Values
+  val[0] =  getChi2Epsilon(epsilon - de, hits);
+  val[1] =  getChi2Epsilon(epsilon     , hits);
+  val[2] =  getChi2Epsilon(epsilon + de, hits);
+
+  // Derivatives
+  double sec = (val[2] + val[0] - 2*val[1]) / (de * de);
+  double fir = (val[2] - val[0]) / (2 * de);
+
+  val[0] = val[1]; // central value
+  val[1] = fir;    // first derivative
+  val[2] = sec;    // second derivative
+}
+
+/*****************************************************************************/
+void ElossEstimator::functionGain(double g, vector<double> & val)
+{
+  getValuesByVaryingGain(slim, g, val);
+} 
+
+/*****************************************************************************/
+double ElossEstimator::functionGain(double gain)
+{
+  vector<double> val(3);
+
+  functionGain(gain, val);
+
+  return val[0];
+}
+
+/****************************************************************************/
+void ElossEstimator::shft2(double &a, double &b, const double c)
+{ a=b; b=c; }
+
+/*****************************************************************************/
+void ElossEstimator::shft3(double &a, double &b, double &c, const double d)
+{ a=b; b=c; c=d; }
+
+/*****************************************************************************/
+double ElossEstimator::goldenSearch(double ax, double bx, double cx)
+{
+  double xmin; //,fmin;
+  
+  const double R = 0.61803399; // (sqrt(5.) - 1) / 2
+  const double C = 1 - R;
+  
+  double x1,x2;
+  double x0=ax;
+  double x3=cx;
+
+  if(fabs(cx-bx) > fabs(bx-ax))
+  { x1 = bx; x2 = bx+C*(cx-bx); }
+  else
+  { x2 = bx; x1 = bx-C*(bx-ax); }
+
+  double f1 = functionGain(x1);
+  double f2 = functionGain(x2);
+
+  while(fabs(x3-x0) > 1e-2)
   {
-    cerr << "  layer[" << j << "] ";
-
-    vector<double> hits;
-/*
-    for(vector<vector<double> >::const_iterator track = tracks.begin();
-                                                track!= tracks.end(); track++)
-*/
-    for(int i = 0; i < nTracks; i++) // FIXME
-      hits.push_back(tracks[i][j]); 
-
-    double gain = 0.; 
-    double chi2min = 1e+30;
-    double dg = 1e-3;
-
-    for(double g = 0.5; g < 1.5; g += dg)
+    if(f2 < f1)
     {
-      double chi2 = getChi2(g, hits, layers[j].depth);
+      shft3(x0,x1,x2, R*x2+C*x3);
+      shft2(   f1,f2, functionGain(x2));
+    }
+    else
+    {
+      shft3(x3,x2,x1, R*x1+C*x0);
+      shft2(   f2,f1, functionGain(x1));
+    }
+  }
 
-      if(chi2 < chi2min)
-      { chi2min = chi2 ; gain = g; }
+  if(f1 < f2)
+  { xmin=x1; } // fmin=f1; }
+  else
+  { xmin=x2; } // fmin=f2; }
+
+  return xmin;
+}
+
+/*****************************************************************************/
+double ElossEstimator::newtonMethodGain(pair<double,double> & value)
+{
+  int nStep = 0;
+
+  double par = value.first; // input MeV/cm
+  double dpar;
+
+  vector<double> val(3);
+
+  do
+  { 
+    functionGain(par, val);
+
+    if(val[2] != 0.) dpar = - val[1]/fabs(val[2]);
+                else dpar = 1.;                     // step up, for epsilon
+
+    if(par + dpar > 0) par += dpar; // ok
+                  else par /= 2;    // half
+
+    nStep++;
+  }
+  while(fabs(dpar) > 1e-3 && nStep < 50);
+  
+  value.first  = par;
+  value.second = 2/val[2]; // sigma2 was 2
+  
+  return val[0];
+}
+
+/****************************************************************************/
+void ElossEstimator::loadGains(ifstream & fileGain)
+{
+  int d;
+  float f;
+
+  while(!fileGain.eof()) 
+  {
+    ChipId key;
+
+    fileGain >> key.first
+             >> key.second.first
+             >> key.second.second
+             >> d;
+
+    if(!fileGain.eof())
+      fileGain >> gains[key]
+               >> f;
+  }
+}
+
+/****************************************************************************/
+void ElossEstimator::correctDeposits(TTrack * track)
+{
+  for(vector<Hit>::iterator hit = track->hits.begin();
+                            hit!= track->hits.end(); hit++)
+    for(vector<Pixel>::iterator pixel = hit->allPixels.begin();
+                                pixel!= hit->allPixels.end(); pixel++)
+      pixel->meas.y *= gains[hit->chipId.code];
+}
+
+/****************************************************************************/
+void ElossEstimator::calibrateGains
+  (map<ChipId, vector<TSlimMeasurement> > & hits, ofstream & fileGain)
+{
+  cerr << " calibrate gain with golden section search + Newton method" << endl;
+  cerr << " number of keys : " << hits.size() << endl;
+
+  for(map<ChipId, vector<TSlimMeasurement> >::iterator
+      key = hits.begin(); key!= hits.end(); key++)
+  if(key->second.size() > 1)
+  {
+    slim = key->second;
+
+    pair<double,double> value;
+
+    // Golden section search [0.1,10.] with center 1.0
+    value.first =  goldenSearch(0.1, 1.0, 10.);
+
+    // Newton method around value.first, get sigma2 = value.second
+    newtonMethodGain(value);
+
+    // If already pre-calibrated, multiply by previous
+    if(gains.count(key->first) > 0)
+    {
+      float g = gains[key->first];
+
+      value.first  *= g;
+      value.second *= g*g;
     }
 
-    double g,val[3];
-    g = gain - dg; val[0] =  getChi2(g, hits, layers[j].depth);
-    g = gain     ; val[1] =  getChi2(g, hits, layers[j].depth);
-    g = gain + dg; val[2] =  getChi2(g, hits, layers[j].depth);
+    fileGain << " " << key->first.first
+             << " " << key->first.second.first
+             << " " << key->first.second.second
+             << " " << key->second.size()
+             << " " << value.first
+             << " " << sqrt(value.second) << endl;
 
-    double secder = (val[2] + val[0] - 2*val[1]) / dg / dg;
-    double sig = sqrt(2/secder);
-
-    cerr << " \t" << 1/layers[j].gain << " " << gain << " " << sig << endl;
-    file <<   " " << 1/layers[j].gain << " " << gain << " " << sig << endl;
-
-    // correct
-    for(vector<vector<double> >::iterator track = tracks.begin();
-                                          track!= tracks.end(); track++)
-//      (*track)[j] *= gain;
-      (*track)[j] *= 1/layers[j].gain;
+    key->second.clear();
   }
-
-  file.close();
 }
 
 /****************************************************************************/
+// from Fitters::newtonMethodEpsilon
 pair<double,double> ElossEstimator::getEstimate
-  (const vector<pair<double,double> > & track)
+  (const vector<TSlimMeasurement> & hits)
 {
-  vector<pair<double,double> > hits; // FIXME miert kell?
-  for(vector<pair<double,double> >::const_iterator hit = track.begin();
-                                                   hit!= track.end(); hit++)
-    hits.push_back(*hit);
+  bool allSaturated = false; // FIXME
 
-  double epsilon = 0.;
-  double chi2min = 1e+30;
-  double de = 1e-3;
+  double epsilon = 3.0;
+  double sig;
 
-  for(double e = 1.; e < 100.; e += de) // FIXME ?? Ez jobb ???
+  if(!allSaturated)
   {
-    double chi2 = getChi2(e, hits);
+    double deps;
+    vector<double> val(3);
+    int nStep = 0;
 
-    if(chi2 < chi2min)
-    { chi2min = chi2 ; epsilon = e; }
+    do
+    {
+      getValuesByVaryingEpsilon(hits, epsilon, val);
+
+      deps = - val[1]/fabs(val[2]);
+
+      // renorm
+      if(val[2] == 0. || fabs(deps) > 1) deps = 1.;
+  
+      if(epsilon + deps > 0) epsilon += deps; // ok
+                        else epsilon /= 2;    // half
+
+      nStep++;
+    }
+    while(fabs(deps) > 1e-3 && nStep < 50);
+
+    getValuesByVaryingEpsilon(hits, epsilon, val);
+
+    sig = sqrt(2/val[2]);
   }
+  else
+  {
+    int nStep = 0;
 
-  double e,val[3];
-  e = epsilon - de; val[0] =  getChi2(e, hits);
-  e = epsilon     ; val[1] =  getChi2(e, hits);
-  e = epsilon + de; val[2] =  getChi2(e, hits);
+    vector<double> val(3);
 
-  double secder = (val[2] + val[0] - 2*val[1]) / de / de;
-  double sig = sqrt(2/secder);
+    do
+    {
+      getValuesByVaryingEpsilon(hits, epsilon, val);
+
+      if(val[1] != 0)
+        epsilon += - val[0]/val[1];
+
+      nStep++;
+    }
+    while(val[0] > 1e-3 && val[1] != 0 && nStep < 10);
+
+    sig = sqr(epsilon*0.1);
+
+    epsilon *= 1.1;
+  }
  
   return pair<double,double>(epsilon, sig);
 }
@@ -229,96 +394,50 @@ double ElossEstimator::getPowerMean(const vector<double> & dedx, double power)
 }
 
 /****************************************************************************/
-void ElossEstimator::estimate(TTrack & recTrack, ofstream & fileEstimate)
+pair<double,double> ElossEstimator::estimate
+  (TTrack & recTrack, ofstream & fileEstimate)
 {
-  if(recTrack.lhits.size() > 0)
+  pair<double,double> estimate(0.,0.);
+
+  if(recTrack.hits.size() > 0)
   {
-  vector<pair<double,double> > track;
+    vector<TSlimMeasurement> track;
+  
+    bool hasOverflow = false;
+  
+    for(vector<Hit>::iterator hit = recTrack.hits.begin();
+                              hit!= recTrack.hits.end(); hit++)
+    {
+      if(hit->hasOverflow) hasOverflow = true;
 
-  for(vector<Hit>::iterator hit = recTrack.lhits.begin();
-                            hit!= recTrack.lhits.end(); hit++)
-  {
-    cerr << "  hit " << hit->charge << " " << hit->length << endl;
-
-    pair<double,double> x(hit->charge*1e-3, hit->length); // MeV, cm
-
-    track.push_back(x);
-  }
-
-  // Fitter
-  pair<double,double> estimate = getEstimate(track);
-  double p = recTrack.pt * cosh(recTrack.eta);
-  fileEstimate <<  " estimates " << p
-               << " " << estimate.first << " " << estimate.second;
-
-  vector<double> dedx;
-  for(vector<pair<double,double> >::const_iterator deposit = track.begin();
-                                                   deposit!= track.end();
-                                                   deposit++)
-      dedx.push_back(deposit->first / deposit->second);
+      TSlimMeasurement slim;
+      slim.energy      = hit->charge;
+      slim.path        = hit->length;
+      slim.hasOverflow = hit->hasOverflow;
+  
+      track.push_back(slim);
+    }
+  
+    // Fitter
+    estimate = getEstimate(track);
+    double p = recTrack.pt * cosh(recTrack.eta);
+    fileEstimate <<  " estimates " << p
+                 << " " << estimate.first << " " << estimate.second;
+  
+    vector<double> dedx;
+    for(vector<TSlimMeasurement>::const_iterator deposit = track.begin();
+                                                 deposit!= track.end();
+                                                 deposit++)
+      dedx.push_back(deposit->energy / deposit->path);
 
     fileEstimate << " " << getTruncMean(dedx)
-         << " " << getPowerMean(dedx, -2.)
-         << " " << getPowerMean(dedx, -1.)
-         << " " << getPowerMean(dedx,  1.)
-         << endl;
-
-  cerr << " --------------------------------------------" << endl;
+                 << " " << getPowerMean(dedx, -2.)
+                 << " " << getPowerMean(dedx, -1.)
+                 << " " << getPowerMean(dedx,  1.)
+                 << " " << hasOverflow
+                 << endl;
   }
-
-/*
-  char name[256];
-  sprintf(name,"../out/estimates_%d.dat",pass);
-
-  ofstream file(name);
-
-  cerr << "  ";
-*/
-
-/*
-  // This model, max likelihood
-  int j = 0;
-  for(vector<vector<double> >::const_iterator track = tracks.begin();
-                                              track!= tracks.end(); track++)
-  {
-//    if((j+1) % (tracks.size()/40) == 0) cerr << ".";
-//    file << " " << (j++ < nTracks ? 0 : 1);
-
-    pair<double,double> estimate = getEstimate(*track);
-//    file <<  " " << estimate.first << " " << estimate.second;
-
-    vector<double> dedx;
-    int j = 0;
-    for(vector<double>::const_iterator hit = track->begin();
-                                       hit!= track->end(); hit++)
-      dedx.push_back(*hit / layers[j++].depth);
-*
-    file << " " << getTruncMean(dedx);
-    file << " " << getPowerMean(dedx, -2.);
-    file << " " << getPowerMean(dedx, -1.);
-    file << " " << getPowerMean(dedx,  1.);
-
-    file << endl;
-*/
-//  }
-
-//  file.close();
+   
+  return estimate;
 }
 
-/****************************************************************************/
-//int main(int arg, char **arc)
-//{
-/*
-  MostProbable mostProbable;
-  eps = mostProbable.value(p / mass[0]);
-  cerr << " epsilon = " << eps << endl;
-
-  cerr << " calibrating gains [with pions only].." << endl;
-  calibrateGains(pass);
-  cerr << " [done]" << endl;
-
-  cerr << " estimating energy loss..." << endl;
-  estimateEloss(pass); 
-  cerr << " [done]" << endl;
-*/
-//}

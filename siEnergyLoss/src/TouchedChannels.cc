@@ -1,6 +1,7 @@
 #include "../interface/TouchedChannels.h"
 
-#include <iostream>
+#include "../../DataFormats/interface/TLayer.h"
+
 #include <cmath>
 
 #define sqr(x) ((x) * (x))
@@ -10,7 +11,8 @@ using namespace std;
 enum outlier { Vert = 0, Horiz = 1, Endpoint = 2};
 
 /*****************************************************************************/
-TouchedChannels::TouchedChannels (const Hit & hit_) : hit(hit_)
+TouchedChannels::TouchedChannels(const Hit & hit_, TLayer * unit_) :
+   hit(hit_), unit(unit_)
 {
 }
 
@@ -22,8 +24,8 @@ TouchedChannels::~TouchedChannels()
 /*****************************************************************************/
 bool TouchedChannels::isInside(double point[])
 {
-  return (point[0] > 0 && point[0] < hit.unit.nrows && 
-          point[1] > 0 && point[1] < hit.unit.ncolumns);
+  return (point[0] > 0 && point[0] < unit->nrows && 
+          point[1] > 0 && point[1] < unit->ncolumns);
 }
 
 /****************************************************************************/
@@ -124,7 +126,7 @@ void TouchedChannels::matchOrAddPixel
 
       for(int k = 0; k < 2; k++)
         calc.dl_dP[k] += normal[k] / scalar *
-                         hit.unit.pitch[k] * hit.length / hit.lambda;
+                         unit->pitch[k] * hit.length / hit.lambda;
     }
   }
  
@@ -166,8 +168,8 @@ vector<double> TouchedChannels::getDivisionLines(int dir, double point[2][2])
   e[1] = int(floor(max(point[0][dir],point[1][dir]))    );
 
   int high;
-  if(dir == 0) high = hit.unit.nrows;
-          else high = hit.unit.ncolumns;
+  if(dir == 0) high = unit->nrows;
+          else high = unit->ncolumns;
 
   for(int i=0; i<2; i++)
   {
@@ -180,8 +182,8 @@ vector<double> TouchedChannels::getDivisionLines(int dir, double point[2][2])
   for(int i=e[0]; i<=e[1]; i++)
   {
     double j = i;
-    if(i == 0   ) j += 1e-3; // FIXME
-    if(i == high) j -= 1e-3; // FIXME
+    if(i == 0   ) j += 1e-3;
+    if(i == high) j -= 1e-3;
 
     divisionLines.push_back(j); 
   }
@@ -264,8 +266,8 @@ void TouchedChannels::calculateOutlierDistance
     for(int dy = 0; dy < 2; dy++)
     {
       vector<double> a(2, 0.);
-      a[0] = ((pixel.meas.x[0] + dx) - endpoint[i][0]) * hit.unit.pitch[0];
-      a[1] = ((pixel.meas.x[1] + dy) - endpoint[i][1]) * hit.unit.pitch[1];
+      a[0] = ((pixel.meas.x[0] + dx) - endpoint[i][0]) * unit->pitch[0];
+      a[1] = ((pixel.meas.x[1] + dy) - endpoint[i][1]) * unit->pitch[1];
 
       double d = sqrt(sqr(a[0]) + sqr(a[1])); 
 
@@ -281,7 +283,7 @@ void TouchedChannels::calculateOutlierDistance
          endpoint[i][0] < pixel.meas.x[0] + dx)
       {
         vector<double> a(2, 0.);
-        a[1] = ((pixel.meas.x[1] + dy) - endpoint[i][1]) * hit.unit.pitch[1];
+        a[1] = ((pixel.meas.x[1] + dy) - endpoint[i][1]) * unit->pitch[1];
 
         double d = fabs(a[1]);
 
@@ -298,7 +300,7 @@ void TouchedChannels::calculateOutlierDistance
          endpoint[i][1] < pixel.meas.x[1] + dy)
       {
         vector<double> a(2, 0.);
-        a[0] = ((pixel.meas.x[0] + dx) - endpoint[i][0]) * hit.unit.pitch[0];
+        a[0] = ((pixel.meas.x[0] + dx) - endpoint[i][0]) * unit->pitch[0];
 
         double d = fabs(a[0]);
 
@@ -330,8 +332,8 @@ void TouchedChannels::calculateOutlierDistance
         p[k] = endpoint[0][k] + lam*(endpoint[1][k] - endpoint[0][k]);
 
       vector<double> a(2, 0.);
-      a[0] = ((pixel.meas.x[0] + dx) - p[0]) * hit.unit.pitch[0];
-      a[1] = ((pixel.meas.x[1] + dy) - p[1]) * hit.unit.pitch[1];
+      a[0] = ((pixel.meas.x[0] + dx) - p[0]) * unit->pitch[0];
+      a[1] = ((pixel.meas.x[1] + dy) - p[1]) * unit->pitch[1];
 
       double d = sqrt(sqr(a[0]) + sqr(a[1]));
 
@@ -343,7 +345,10 @@ void TouchedChannels::calculateOutlierDistance
   pixel.calc.l = - dist;
 
   for(int k = 0; k < 2; k++)
-    pixel.calc.dl_dP[k] = vdist[k] / dist * hit.unit.pitch[k];
+    if(dist > 0)
+      pixel.calc.dl_dP[k] = vdist[k] / dist * unit->pitch[k];
+    else
+      pixel.calc.dl_dP[k] = 0.;
 }
 
 /****************************************************************************/

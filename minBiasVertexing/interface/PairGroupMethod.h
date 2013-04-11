@@ -1,5 +1,5 @@
-#ifndef _PairGroupMethod_
-#define _PairGroupMethod_
+#ifndef _PairGroupMethod_h_
+#define _PairGroupMethod_h_
 
 #include <utility>
 #include <vector>

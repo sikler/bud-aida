@@ -7,11 +7,16 @@ class MostProbable
   MostProbable();
 
   double value(const double & bg);
+  double getValue(double p, int pid);
+
   double dEdx (const double & bg);
   double dpdx (const double & bg);
 
+  int guessPid(double p, double y);
+  int  surePid(double p, double y);
+
  private:
-  double Z_A, I, rho, depth, K, me, C, x0,x1,a,k;
+  double depth, I, me, C, x0,x1,a,k;
   double d0;
 };
 

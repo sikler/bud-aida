@@ -1,0 +1,8 @@
+#!/bin/tcsh -f
+
+awk '{ \
+ if($v>min && $v<max) \
+ { i=int(($v-min)/(max-min)*bin); a[i]++; sum++ } \
+} END { \
+ for(i=0; i<bin; i++) print min+(i+0.5)/bin*(max-min),a[i]+0,sum \
+}' v=$1 min=$2 max=$3 bin=$4 $5

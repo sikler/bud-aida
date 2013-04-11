@@ -1,47 +1,42 @@
-PROGS = ../bin/simulateEvents ../bin/plotEvents
+PROGS = ../bin/simulateEvents \
+	../bin/reconstructEvents \
+	../bin/calibrateGain \
+	../bin/plotEvents
 
 all : $(PROGS)
 
 ###############################################################################
-#TREEOBJS = TBunchCrossing.o TVertex.o TTrack.o TPixelHit.o TStripHit.o \
-#           Coord.o Hit.o dict.o
-
-#DEDXOBJS = CubicSpline.o LinearProgramming.o NewtonMinimizer.o \
-#           ClusterGenerator.o ElossModel.o ModelBichsel.o TouchedChannels.o \
-#           MostProbable.o FitStripCluster.o
-
-FLAGS  = -Wall -O3 `root-config --cflags`
+CFLAGS = -Wall -O3 `root-config --cflags`
 LFLAGS = -Wl,--no-as-needed
-LIBS   = -lm -L/usr/local/lib -lCLHEP `root-config --libs` -lQuadp \
-	-L../../DataFormats/lib      -ldict \
+LIBS   = -lm `root-config --libs` \
 	-L../../siEnergyLoss/lib     -lsiEnergyLoss \
-	-L../../minBiasVertexing/lib -lminBiasVertexing
+	-L../../minBiasVertexing/lib -lminBiasVertexing \
+	-L../../DataFormats/lib      -ldict
 
 ###############################################################################
 ../bin/plotEvents : plotEvents.o \
 			../../DataFormats/lib/libdict.a
-	g++ $(FLAGS) $(LFLAGS) -o $@ $^ $(LIBS)
+	g++ $(CFLAGS) $(LFLAGS) -o $@ $^ $(LIBS)
 
-../bin/simulateEvents : simulateEvents.o KalmanTracking.o \
+../bin/calibrateGain : calibrateGain.o \
+			../../DataFormats/lib/libdict.a \
+			../../siEnergyLoss/lib/libsiEnergyLoss.a
+	g++ $(CFLAGS) $(LFLAGS) -o $@ $^ $(LIBS)
+
+../bin/reconstructEvents : reconstructEvents.o KalmanTracking.o \
 			../../DataFormats/lib/libdict.a \
 			../../siEnergyLoss/lib/libsiEnergyLoss.a \
 			../../minBiasVertexing/lib/libminBiasVertexing.a
-	g++ $(FLAGS) $(LFLAGS) -o $@ $^ $(LIBS)
+	g++ -Wno-unused-variable $(CFLAGS) $(LFLAGS) -o $@ $^ $(LIBS)
+
+../bin/simulateEvents : simulateEvents.o KalmanTracking.o gzstream.o \
+			../../DataFormats/lib/libdict.a \
+			../../siEnergyLoss/lib/libsiEnergyLoss.a
+	g++ $(CFLAGS) $(LFLAGS) -o $@ $^ $(LIBS)
 
 ###############################################################################
-#dict.so : dict.cc
-#	g++ $(FLAGS) -o $@ $^ `root-config --ldflags` -shared
-#
-#dict.o : dict.cc
-#	g++ $(FLAGS) -c -o $@ $<
-#
-#dict.cc : $(wildcard ../interface/T*.h ../interface/Coord.h ../interface/Hit.h) LinkDef.h
-#	rm -f dict.C dict.h
-#	rootcint -f $@ -c $^
-#
-###############################################################################
-%.o : %.cc $(wildcard ../interface/*.h)
-	g++ $(FLAGS) -c -o $@ $<
+%.o : %.cc $(wildcard ../../*/interface/*.h)
+	g++ $(CFLAGS) -c -o $@ $<
 
 clean :
-	rm -f $(PROGS) *.o
+	rm -f $(PROGS) *.o ../out/hits.bin ../out/*.root

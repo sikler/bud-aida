@@ -4,7 +4,6 @@
 #include <vector>
 
 #include "TObject.h"
-
 #include "Crossing.h"
 
 /*****************************************************************************/
@@ -18,7 +17,7 @@ class Pixel : public TObject
   {
    public:
     int x[2]; // coordinate of lower left corner [pitch]
-    double y; // deposited charge [keV]
+    double y; // deposited charge [MeV]
 
     Crossing c[2];
   };
@@ -28,7 +27,7 @@ class Pixel : public TObject
    public:
     bool isTouched;
 
-    double l;        // true path [cm] FIXME
+    double l;        // true path [cm]
     double dl_dP[2]; //
   };
 

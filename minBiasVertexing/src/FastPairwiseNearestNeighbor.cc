@@ -1,7 +1,5 @@
 #include "../interface/FastPairwiseNearestNeighbor.h"
 
-#include "TMatrixD.h"
-#include <iostream>
 #include <cmath>
 
 #define sqr(x) ((x) * (x))
@@ -66,8 +64,6 @@ void FastPairwiseNearestNeighbor::run
 
   vector<Cluster> clusters;
 
-cerr << " nOptimal = " << nOptimal << " " << endl;
-
   // Initialize clusters
   for(vector<pair<double,double> >::const_iterator p = points.begin();
                                                    p!= points.end(); p++)
@@ -87,16 +83,12 @@ cerr << " nOptimal = " << nOptimal << " " << endl;
     clusters.push_back(cluster);
   }
 
-cerr << " a1" << endl;
-
   lists.clear();
 
   for(vector<Cluster>::iterator c1 = clusters.begin();
                                 c1!= clusters.end(); c1++)
   if(c1->use)
     lists.push_back(c1->list);
-
-cerr << " a2" << endl;
 
   unsigned int nUse = clusters.size() - 1;
 
@@ -107,16 +99,12 @@ cerr << " a2" << endl;
 
   int nSteps  = 0;
   int nUpdate = 0;
-cerr << " a3" << endl;
 
   while(nUse > 0)
   {
-cerr << " a4" << endl;
     vector<Cluster>::iterator c[2];
     double minDistance = 0;
     bool isFirst = true;
-
-cerr << " a4.0" << endl;
 
     // Find smallest distance
     for(vector<Cluster>::iterator c1 = clusters.begin();
@@ -125,7 +113,6 @@ cerr << " a4.0" << endl;
     if(c1->minDistance < minDistance || isFirst)
     {
       minDistance = c1->minDistance;
-cerr << " a4.05" << endl;
 
       c[0] = c1 ;
       c[1] = c1->minCluster ;
@@ -133,31 +120,22 @@ cerr << " a4.05" << endl;
       isFirst = false;
     }
 
-cerr << " a4.1 " << endl;
-cerr << " -- " << c[0]->sig2 << endl;
-cerr << " -1 " << c[1]->sig2 << endl;
-
     // Join 
     double sig2 = 1 /
                   (        1 / c[0]->sig2 +         1 / c[1]->sig2);
     double pos  = (c[0]->pos / c[0]->sig2 + c[1]->pos / c[1]->sig2) * sig2;
-
-cerr << " pos,sig2 " << pos << " " << sig2 << endl;
 
     // Update
     c[0]->pos  = pos;     
     c[0]->sig2 = sig2;     
     c[0]->n    = c[0]->n + c[1]->n;
 
-cerr << " a4.11" << endl;
     for(vector<int>::iterator il = c[1]->list.begin();
                               il!= c[1]->list.end(); il++) 
       c[0]->list.push_back(*il);
-cerr << " a4.12" << endl;
 
     // Remove c[1]
     c[1]->use  = false;
-cerr << " a4.2" << endl;
 
     if(minDistance < sqr(dMax))
     {
@@ -171,7 +149,6 @@ cerr << " a4.2" << endl;
         lists.push_back(c1->list);
     }
 
-cerr << " a4.3" << endl;
     for(vector<Cluster>::iterator c1 = clusters.begin();
                                   c1!= clusters.end(); c1++)
     if(c1->use && (c1->minCluster == c[0] ||
@@ -180,7 +157,6 @@ cerr << " a4.3" << endl;
       nUpdate++;
       findClosest(clusters, c1);
     }
-cerr << " a5" << endl;
 
     nSteps++;
 

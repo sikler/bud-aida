@@ -1,7 +1,5 @@
 #include "../interface/CubicSpline.h"
 
-#include <iostream>
-#include <cstdlib>
 using namespace std;
 
 /****************************************************************************/
@@ -22,7 +20,7 @@ f(xi), with x1 < x2 < .. . < xN, and given values yp1 and ypn for the first
 derivative of the interpolating function at points 1 and n, respectively,
 this routine returns an array y2[1..n] that contains the second derivatives
 of the interpolating function at the tabulated points xi. If yp1 and/or ypn
-are equal to 1 × 1030 or larger, the routine is signaled to set the
+are equal to 1 x 1030 or larger, the routine is signaled to set the
 corresponding boundary condition for a natural spline, with zero second
 derivative on that boundary.
 */
@@ -80,10 +78,8 @@ void CubicSpline::interpolate
 
   if(x <= xa[klo] || x >= xa[khi])
   { 
-    cerr << " x is outside of limits ("
-         << xa[klo] << " < " << x << " < " << xa[khi] << ")" << endl;
-//    exit(1);
-    klo = 0; khi = 1; // FIXME
+    // x is outside of limits
+    klo = 0; khi = 1;
   }
   else
     while (khi-klo > 1)

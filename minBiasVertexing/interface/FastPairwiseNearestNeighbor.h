@@ -1,5 +1,5 @@
-#ifndef _FastPairwiseNearestNeighbor_
-#define _FastPairwiseNearestNeighbor_
+#ifndef _FastPairwiseNearestNeighbor_h_
+#define _FastPairwiseNearestNeighbor_h_
 
 #include <utility>
 #include <vector>

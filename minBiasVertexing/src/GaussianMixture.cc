@@ -1,6 +1,5 @@
 #include "../interface/GaussianMixture.h"
 
-#include <iostream>
 #include <cmath>
 
 #define sqr(x) ((x) * (x))

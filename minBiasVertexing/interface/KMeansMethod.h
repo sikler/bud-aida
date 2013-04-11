@@ -1,5 +1,5 @@
-#ifndef _KMeansMethod_
-#define _KMeansMethod_
+#ifndef _KMeansMethod_h_
+#define _KMeansMethod_h_
 
 #include <utility>
 #include <vector>

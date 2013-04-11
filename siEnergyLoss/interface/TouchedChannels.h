@@ -2,12 +2,15 @@
 #define _TouchedChannels_h_
 
 #include "../../DataFormats/interface/Hit.h"
+
 #include <vector>
+
+class TLayer;
 
 class TouchedChannels
 {
   public:
-    TouchedChannels(const Hit & hit_);
+    TouchedChannels(const Hit & hit_, TLayer * unit);
     ~TouchedChannels();
 
     std::vector<Pixel> findChannels(double endpoint[2][2]);
@@ -32,6 +35,7 @@ class TouchedChannels
     void calculateOutlierDistance(double endpoint[2][2], Pixel& pixel);
 
     const Hit hit;
+    TLayer * unit;
 
     int dir; // dominant direction
 };
