@@ -47,7 +47,7 @@ NEVENTS = 1000
 ../out/bunchCrossings_simu.root : simulateEvents \
 				../data/pp_minBias.dat.gz ../data/cms.dat
 	$(PRE) ./$< -numberOfBunchCrossings $(NEVENTS) \
-	 -numberOfCollisionsPoissonMean 2.0 \
+	 -numberOfCollisionsPoissonMean 5.0 \
 	 -interactionRegionSigmaZ       5.0 \
 	 -randomGainHalfWidth           0.5 \
 	 -i ../data/pp_minBias.dat.gz \
