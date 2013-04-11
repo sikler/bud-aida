@@ -1,30 +1,33 @@
-OBJS = TBunchCrossing.o TVertex.o TTrack.o TPixelHit.o TStripHit.o \
-	Coord.o Hit.o Pixel.o PixelUnit.o Crossing.o dict.o
+OBJS = TBunchCrossing.o TVertex.o TTrack.o \
+	TChipId.o TLayer.o TSlimMeasurement.o \
+	Point.o Hit.o Pixel.o Crossing.o \
+	RandomGenerator.o \
+	dict.o
 
-FLAGS  = -Wall -O3 `root-config --cflags`
+all : ../lib/libdict.a dict.so dict.o
 
 ###############################################################################
-all : ../lib/libdict.a dict.so dict.o
+CFLAGS  = -Wall -O3 `root-config --cflags`
 
 ###############################################################################
 ../lib/libdict.a : $(OBJS)
 	ar rs $@ $^
 
 dict.so : dict.cc
-	g++ $(FLAGS) -o $@ $^ `root-config --ldflags` -shared
+	g++ $(CFLAGS) -o $@ $^ `root-config --ldflags` -shared
 
 dict.o : dict.cc
-	g++ $(FLAGS) -c -o $@ $<
+	g++ $(CFLAGS) -c -o $@ $<
 
-dict.cc : $(wildcard ../interface/T*.h) ../interface/Coord.h \
-		../interface/Hit.h ../interface/Pixel.h \
-		../interface/PixelUnit.h ../interface/Crossing.h LinkDef.h
-	rm -f dict.C dict.h
-	rootcint -f $@ -c $^
+dict.cc : $(wildcard ../interface/T*.h) \
+		../interface/Point.h ../interface/Hit.h ../interface/Pixel.h \
+		../interface/Crossing.h LinkDef.h
+	rm -f dict.C dict.cc dict.h
+	rootcint -v4 -f $@ -c $^
 
 ###############################################################################
 %.o : %.cc $(wildcard ../interface/*.h)
-	g++ $(FLAGS) -c -o $@ $<
+	g++ $(CFLAGS) -c -o $@ $<
 
 clean :
 	rm -f ../lib/*.a *.o *.so dict.cc dict.h

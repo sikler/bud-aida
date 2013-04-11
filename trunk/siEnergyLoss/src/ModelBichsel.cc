@@ -1,22 +1,27 @@
 #include <cmath>
-#include <cstdlib>
 #include <fstream>
 #include <iostream>
+
 using namespace std;
 
 #include "../interface/ModelBichsel.h"
 #include "../interface/CubicSpline.h"
+
+#include "../../DataFormats/interface/RandomGenerator.h"
 
 /*****************************************************************************/
 ModelBichsel::ModelBichsel(const char * elem)
 {
   readMeanNumberOfCollisions(elem);
   readCumulativeCrossSection(elem);
+
+  theRandom = new RandomGenerator();
 }
 
 /*****************************************************************************/
 ModelBichsel::~ModelBichsel()
 {
+  delete theRandom;
 }
 
 /*****************************************************************************/
@@ -26,8 +31,10 @@ void ModelBichsel::readMeanNumberOfCollisions(const char * elem)
 
   ifstream file;
   char fileName[256];
-  sprintf(fileName, "../../siEnergyLoss/data/meanNumberOfCollisions_%s.dat", elem);
+  sprintf(fileName,
+     "../../siEnergyLoss/data/meanNumberOfCollisions_%s.dat", elem);
   file.open(fileName);
+
   // - betaGamma M_0 M_1
 
   int d; double f, betaGamma, sigmaT;
@@ -53,10 +60,11 @@ void ModelBichsel::readCumulativeCrossSection(const char * elem)
 
   ifstream file;
   char fileName[256];
-  sprintf(fileName, "../../siEnergyLoss/data/cumulativeCollisionCrossSection_%s.dat", elem);
+  sprintf(fileName, 
+     "../../siEnergyLoss/data/cumulativeCollisionCrossSection_%s.dat", elem);
   file.open(fileName);
-  // - - energies [eV]
 
+  // - - energies [eV]
   // ccs [betagamma] [0=cum prob / 1=log(delta) / 2=der] [row]
 
   int k0 = 0;
@@ -90,48 +98,11 @@ void ModelBichsel::readCumulativeCrossSection(const char * elem)
   for(int k = 0; k < ccsCols; k++)
     theSpline.prepare(ccs[k][0],ccs[k][1], ccsRows, 1e+30, der[k], ccs[k][2]);
 
-/*
-  ofstream outFile;
-  outFile.open("../out/ccs.spl");
-
-  double f, logEloss;
-  for(int k = 0; k < ccsCols; k++)
-  {
-    for(double r = 1e-6; r < 1e-3; r+=1e-6)
-    {
-      theSpline.interpolate(ccs[k][0],ccs[k][1],ccs[k][2], ccsRows,
-                            r, &logEloss,&f,&f);
-      outFile << " " << r << " " << exp(logEloss) << endl;
-    }
-
-    for(double r = 1-1e-3; r < 1-1e-6; r+=1e-6)
-    {
-      theSpline.interpolate(ccs[k][0],ccs[k][1],ccs[k][2], ccsRows,
-                            r, &logEloss,&f,&f);
-      outFile << " " << r << " " << exp(logEloss) << endl;
-    }
-    outFile << endl << endl;
-  }
-  outFile.close();
-*/
-
   cerr << " [done]" << endl;
 }
 
 /*****************************************************************************/
-double ModelBichsel::getFlatRandom()
-{
-  return drand48();
-}
-
-/****************************************************************************/
-double ModelBichsel::getGaussRandom()
-{
-  return sqrt(-2*log(getFlatRandom())) * cos(M_PI*getFlatRandom());
-}
-
-/*****************************************************************************/
-// thickness [um], return in keV
+// thickness [um], return in MeV
 double ModelBichsel::generate(double thickness)
 {
   double x     = 0.; // cumulative length of segment
@@ -141,12 +112,14 @@ double ModelBichsel::generate(double thickness)
 
   while(1)
   {
-    double Dx = -log(getFlatRandom()) / sigmaT; // distance to next collision
+    // distance to next collision
+    double Dx = -log(theRandom->getFlatRandom()) / sigmaT;
+
     x = x + Dx; // total length of segment so far
 
     if(x > thickness) break; 
 
-    double r = getFlatRandom();
+    double r = theRandom->getFlatRandom();
 
     double f, logEloss[2];
 
@@ -158,11 +131,11 @@ double ModelBichsel::generate(double thickness)
                  logEloss[1]*   xc);  // the energy loss in segment
   }
 
-  return delta * 1e-3; // keV
+  return delta * 1e-6; // MeV
 }
 
 /*****************************************************************************/
-// thickness [um], return in keV
+// thickness [um], return in MeV
 double ModelBichsel::generateDemo(double thickness, ofstream & file)
 {
   double x     = 0.; // cumulative length of segment
@@ -172,12 +145,14 @@ double ModelBichsel::generateDemo(double thickness, ofstream & file)
 
   while(1)
   {
-    double Dx = -log(getFlatRandom()) / sigmaT; // distance to next collision
+    // distance to next collision
+    double Dx = -log(theRandom->getFlatRandom()) / sigmaT;
+
     x = x + Dx; // total length of segment so far
 
     if(x > thickness) break;
 
-    double r = getFlatRandom();
+    double r = theRandom->getFlatRandom();
 
     double f, logEloss[2];
     for(int j=0; j<2; j++)
@@ -191,14 +166,12 @@ double ModelBichsel::generateDemo(double thickness, ofstream & file)
                                    logEloss[1]*   xc) << endl;
   }
 
-  return delta * 1e-3; // keV
+  return delta * 1e-6; // MeV
 }
 
 /*****************************************************************************/
 void ModelBichsel::prepare(double betaGamma)
 {
-//  cerr << "  [ModelBichsel] prepare bg=" << betaGamma;
-
   // Get sigmaT
   CubicSpline theSpline;
   double f;
@@ -211,12 +184,10 @@ void ModelBichsel::prepare(double betaGamma)
     if(betaGamma >= cbg[ic] && betaGamma < cbg[ic+1])
       break;
 
-  // FIXME
+  // Over or under
   if(betaGamma < cbg[0])         ic = 0; 
   if(betaGamma > cbg[ccsCols-1]) ic = ccsCols-2;
   
   xc = log(betaGamma / cbg[ic]) / log(cbg[ic+1] / cbg[ic]);
-
-//  cerr << " [done]" << endl;
 }
 

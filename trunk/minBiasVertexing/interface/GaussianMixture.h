@@ -1,5 +1,5 @@
-#ifndef _GaussianMixture_
-#define _GaussianMixture_
+#ifndef _GaussianMixture_h_
+#define _GaussianMixture_h_
 
 #include <utility>
 #include <vector>

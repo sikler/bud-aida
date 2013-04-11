@@ -1,20 +1,18 @@
 #include "../interface/ElossModel.h"
-
 #include "../interface/TouchedChannels.h"
 #include "../interface/Levels.h"
 
-#define sqr(x) ((x) * (x))
+#include "../../DataFormats/interface/TLayer.h"
 
 #include <fstream>
-#include <iomanip>
 #include <cmath>
 
+#define sqr(x) ((x) * (x))
+
 using namespace std;
-using namespace CLHEP;
 
 /*****************************************************************************/
-ElossModel::ElossModel
-  (Hit hit_) : hit(hit_)
+ElossModel::ElossModel(Hit hit_, TLayer * unit_) : hit(hit_), unit(unit_)
 {
 }
 
@@ -34,7 +32,7 @@ void ElossModel::preparePixels
     endpoint[i][k] = pars[k] + (2*i-1) * 0.5 * hit.dpos[k];
 
   // Prepare pixels
-  TouchedChannels theTouchedChannels(hit);
+  TouchedChannels theTouchedChannels(hit, unit);
   hit.allPixels = theTouchedChannels.findChannels(endpoint);
 }
 
@@ -117,7 +115,7 @@ double ElossModel::getChi2(double y, double Delta,
 
 /*****************************************************************************/
 void ElossModel::calculate(const vector<double>& pars, double & val,
-                           HepVector& beta, HepMatrix& alpha)
+                           TVectorD & beta, TMatrixD & alpha)
 {
   val = 0.;
 
@@ -138,13 +136,12 @@ void ElossModel::calculate(const vector<double>& pars, double & val,
     Pixel::Calc c = pixel->calc;
 
     double y       = pixel->meas.y;
-
     double epsilon = exp(pars[2]);
     double l       = c.l;
     double Delta   = epsilon * l; 
  
     vector<double> der(3, 0.);
-    getChi2(y,Delta, hit.threshold, hit.overflow, der);
+    getChi2(y,Delta, unit->threshold, unit->overflow, der);
 
     // Value
     val += der[0];
@@ -154,7 +151,7 @@ void ElossModel::calculate(const vector<double>& pars, double & val,
       beta[k] += - der[1] * epsilon * c.dl_dP[k];
 
     beta[2] += - der[1] * Delta;
-    
+
     // Alpha
     for(int j=0; j<2; j++)
     for(int k=0; k<2; k++)     
@@ -173,7 +170,7 @@ void ElossModel::calculate(const vector<double>& pars, double & val,
 
 /*****************************************************************************/
 double ElossModel::getDerivatives
-  (const vector<double>& pars, HepVector & beta, HepMatrix & alpha)
+  (const vector<double>& pars, TVectorD & beta, TMatrixD & alpha)
 {
   double val;
 
@@ -187,10 +184,11 @@ double ElossModel::getValue(const vector<double>& pars)
 {
   double val;
   int dim = pars.size();
-  HepMatrix alpha(dim,dim);
-  HepVector beta(dim,0.);
+  TMatrixD alpha(dim,dim); alpha.Zero();
+  TVectorD beta(dim); beta.Zero();
 
   calculate(pars, val, beta, alpha);
 
   return val;
 }
+

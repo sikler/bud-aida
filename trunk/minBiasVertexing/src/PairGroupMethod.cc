@@ -1,11 +1,12 @@
 #include "../interface/PairGroupMethod.h"
 
+#include <iostream>
+#include <cmath>
+
 #include "TMatrixD.h"
 
 #define sqr(x) ((x) * (x))
 
-#include <iostream>
-#include <cmath>
 using namespace std;
 
 /*****************************************************************************/
@@ -44,7 +45,7 @@ void PairGroupMethod::run(const vector<pair<double,double> > & points,
         isFirst = false;
       }
 
-cerr << " nUse = " << nUse << " dmin = " << sqrt(dmin) << endl;
+    cerr << " nUse = " << nUse << " dmin = " << sqrt(dmin) << endl;
 
     // Join imin and jmin
     double x  = (p[imin].first/p[imin].second + p[jmin].first/p[jmin].second) /

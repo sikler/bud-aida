@@ -1,7 +1,6 @@
 #include "../interface/OptimalTree.h"
 
 #include <cmath>
-#include <iostream>
 
 #define sqr(x) ((x) * (x))
 

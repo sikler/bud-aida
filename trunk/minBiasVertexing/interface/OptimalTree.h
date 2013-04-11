@@ -1,5 +1,5 @@
-#ifndef _OptimalTree_
-#define _OptimalTree_
+#ifndef _OptimalTree_h_
+#define _OptimalTree_h_
 
 #include <utility>
 #include <vector>

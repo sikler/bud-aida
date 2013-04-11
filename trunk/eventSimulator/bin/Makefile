@@ -1,20 +1,54 @@
-all : ../view/bunchCrossing.zip \
-      ../view/clusters.zip
+all : process view
 
-../view/bunchCrossing.zip : ../out/bunchCrossing.m
-	cd ../out ; zip -q ../view/bunchCrossing.zip bunchCrossing.m
+process : ../out/bunchCrossings_reco.root
+view : ../view/bunchCrossing.zip ../view/clusters.zip
 
-../view/clusters.zip : ../out/clusters.m
-	cd ../out ; zip -q ../view/clusters.zip clusters.m
+#PRE = valgrind --leak-check=full
+PRE =
 
-../out/bunchCrossing.m : plotEvents ../out/bunchCrossings.root
-	./$<
+NEVENTS = 1000
 
-../out/bunchCrossings.root : simulateEvents ../data/minBias.dat
-	./$<
+###############################################################################
+../view/%.zip : ../out/%.m
+	cd ../out ; zip -q $@ $*.m
 
-# setenv LD_LIBRARY_PATH
-# /usr/local/lib:/usr/local/lib/root:/home/sikler/aida/bud-aida/siEnergyLoss/lib
+../out/bunchCrossing.m : plotEvents \
+				../out/bunchCrossings_reco.root
+	$(PRE) ./$< -event 5 -i ../out/bunchCrossings_reco.root
 
-#%.zip : %.m
-#	zip -q -m $@ $<
+###############################################################################
+#../out/gains.dat : calibrateGain \
+#				../out/hits.bin
+#	$(PRE) ./$< -i ../out/hits.bin -o $@
+#
+###############################################################################
+#../out/hits.bin :		../out/bunchCrossings_reco.root
+#	touch $@
+
+../out/bunchCrossings_reco.root : reconstructEvents calibrateGain \
+       				../out/bunchCrossings_simu.root 
+	$(PRE) ./reconstructEvents -collectHits asPion \
+	 -i ../out/bunchCrossings_simu.root -o $@
+	#
+	$(PRE) ./calibrateGain \
+	 -i ../out/hits.bin -o ../out/gains_asPion.dat
+	#
+	$(PRE) ./reconstructEvents -collectHits ifIdentified \
+	 -i ../out/bunchCrossings_simu.root -o $@
+	#
+	$(PRE) ./calibrateGain \
+	 -i ../out/hits.bin -o ../out/gains_ifIdentified.dat \
+	         -previousGain ../out/gains_asPion.dat
+	#
+	$(PRE) ./reconstructEvents -collectHits notNeeded \
+	 -i ../out/bunchCrossings_simu.root -o $@
+
+###############################################################################
+../out/bunchCrossings_simu.root : simulateEvents \
+				../data/pp_minBias.dat.gz ../data/cms.dat
+	$(PRE) ./$< -numberOfBunchCrossings $(NEVENTS) \
+	 -numberOfCollisionsPoissonMean 2.0 \
+	 -interactionRegionSigmaZ       5.0 \
+	 -randomGainHalfWidth           0.5 \
+	 -i ../data/pp_minBias.dat.gz \
+	 -o $@

@@ -1,16 +1,23 @@
-const double Noise     = 1.5;  // keV 
-const double Threshold = 7.5;  // keV
-const double Overflow  = 150.; // keV
+#ifndef _Levels_h_
+#define _Levels_h_
 
-const double Coupling  = 0.10;
+// Silicon
+const double Noise     = 1.5e-3; // MeV move to FIXME
 
-const double Nu = 0.65; // FIXME
-
-const double a = 0.07;
-
-const double Sigma0 = 2.0; // keV
+// Energy loss parametrization
+const double Nu     = 0.65;
+const double a      = 0.07;
+const double Sigma0 = 2e-3; // MeV
 const double b      = 0.095;
 
-//const double c = 0.8;
+// Reference path length
+const double l0 = 450e-4;   // cm
 
-const double l0 = 300.;
+// Bethe-Bloch, silicon
+const double K = 0.307075e-3; // GeV cm^2 / g
+const int    Z = 14;
+const double A = 28.;
+
+const double rho = 2.33;      // g/cm3
+
+#endif

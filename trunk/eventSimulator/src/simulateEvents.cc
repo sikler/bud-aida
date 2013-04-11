@@ -4,34 +4,24 @@
 #include <cstdlib>
 #include <vector>
 
+#include "../interface/gzstream.h"
+#include "../interface/KalmanTracking.h"
+
 using namespace std;
 
 #include "../../DataFormats/interface/TBunchCrossing.h"
 #include "../../DataFormats/interface/TVertex.h"
 
-#include "../interface/KalmanTracking.h"
-
-#include "TVectorD.h"
-#include "TMath.h"
-
-#include "../../siEnergyLoss/interface/RecoClusters.h"
-#include "../../siEnergyLoss/interface/ElossEstimator.h"
-
-#include "../../minBiasVertexing/interface/PairGroupMethod.h"
-#include "../../minBiasVertexing/interface/FastPairwiseNearestNeighbor.h"
-#include "../../minBiasVertexing/interface/GaussianMixture.h"
-#include "../../minBiasVertexing/interface/KMeansMethod.h"
-#include "../../minBiasVertexing/interface/OptimalTree.h"
-
-
-enum Classification { divisive, kMeans, gaussianMixture, optimalTree };
-
-//#include "../interface/Hit.h"
-
 #include "TFile.h"
 #include "TTree.h"
 
-const double sigmaZ = 5.;
+// FIXME
+char inputName[256], outputName[256];
+
+int nBunchCrossings, nCollisions;
+double Mu, sigmaZ, ptMin;
+float gainHalfWidth;
+bool fix;
 
 /*****************************************************************************/
 double getFlatRandom()
@@ -46,16 +36,38 @@ double getGaussRandom()
 }
 
 /*****************************************************************************/
-TVertex readGeneratedEvent(ifstream & fileEvents)
+double poisson(double mu, double n)
+{
+  return pow(mu,n)*exp(-mu - lgamma(n+1));
+}
+
+/*****************************************************************************/
+int getPoissonRandom(double mu)
+{
+  int n;
+  double p;
+
+  do
+  {
+    n = int(getFlatRandom() * 10*mu) + 1;
+    p = poisson(mu,n);
+  }
+  while(getFlatRandom() > p);
+
+  return n;
+}
+
+/*****************************************************************************/
+TVertex readGeneratedEvent(igzstream & fileEvents)
 {
   int d, processId, n;
 
   fileEvents >> d;          // event number
   fileEvents >> processId;  // process id, Pythia
-  fileEvents >> d;          // total number of particles
   fileEvents >> n;          // number of particles to follow
+  fileEvents >> d;          // total number of particles
 
-  // Initialize verrtex
+  // Initialize vertex
   TVertex vertex;
 
   vertex.z = sigmaZ * getGaussRandom();
@@ -65,13 +77,14 @@ TVertex readGeneratedEvent(ifstream & fileEvents)
   for(int i = 0; i < n; i++)
   {
     int pid;
-    double eta,pt;
+    double eta,pt,phi;
 
     fileEvents >> pid; // particle id
     fileEvents >> eta; // eta
     fileEvents >> pt;  // transverse momentum
+    fileEvents >> phi; // 
 
-    if(fabs(eta) < 2.5 && pt > 0.1) // FIXME
+    if(pt > ptMin)
     {
       TTrack track;
 
@@ -80,7 +93,7 @@ TVertex readGeneratedEvent(ifstream & fileEvents)
 
       track.eta = eta;
       track.pt  = pt ;
-      track.phi = drand48() * 2 * M_PI;
+      track.phi = phi;
 
       track.z   = vertex.z; // FIMXE
 
@@ -92,242 +105,163 @@ TVertex readGeneratedEvent(ifstream & fileEvents)
 }
 
 /*****************************************************************************/
-double getLambda(const VertexCollection & vertices)
+void printPropeller(int i)
 {
-  int n = 0;
-  for(VertexCollection::const_iterator vertex = vertices.begin();
-                                       vertex!= vertices.end(); vertex++)
-    n += vertex->second.size();
+  char c[4] = {'|', '/','-','\\'};
 
-  double chi2 = 0.;
-  for(VertexCollection::const_iterator vertex = vertices.begin();
-                                       vertex!= vertices.end(); vertex++)
-  {
-    int k = vertex->second.size();
-
-    if(k > 0)
-      chi2 += -2 * k * log(float(k)/n);
-  }
-
-  return chi2;
+  if(i < 40) cerr << ".";
+        else cerr << c[(i-40) % 4] << "\b";
 }
 
 /*****************************************************************************/
-void numberOfVertices(const vector<pair<double,double> > & points,
-                      const vector<pair<TVectorD,TVectorD> > & clusters,
-                      VertexCollection & rec,
-                      int classification)
+void options(int arg, char **arc)
 {
-  rec.clear();
+  int i = 1;
 
-  for(int K = 1; K <= int(points.size()); K++)
+  // Set default values
+  nBunchCrossings = 1; nCollisions = 1; Mu = 1.; sigmaZ = 1.;
+  gainHalfWidth = 0.;
+  ptMin = 0.050; // GeV/c
+  fix = false;
+
+  do
   {
-    // Get results from hierarchical clustering
-    TVectorD mu(K); mu = clusters[K].first;
-    TVectorD P(K) ; P  = clusters[K].second;
+    if(strcmp(arc[i],"-numberOfBunchCrossings") == 0 ||
+       strcmp(arc[i],"-nbx") == 0) 
+         nBunchCrossings = atoi(arc[++i]);
 
-    double chi2 = 0.;
-
-    if(classification == kMeans)
+    if(strcmp(arc[i],"-numberOfCollisionsFix ") == 0 ||
+       strcmp(arc[i],"-ncfix ") == 0)
     {
-      KMeansMethod theKMeansMethod;
-      chi2 = theKMeansMethod.run(K,points, mu,P, rec);
+      fix = true;
+      Mu = atoi(arc[++i]);
     }
 
-    if(classification == gaussianMixture)
+    if(strcmp(arc[i],"-numberOfCollisionsPoissonMean") == 0 ||
+       strcmp(arc[i],"-ncpoi ") == 0)
     {
-      GaussianMixture theGaussianMixture;
-      chi2 = theGaussianMixture.run(K,points, mu,P, rec);
+      fix = false;
+      Mu = atof(arc[++i]);
     }
 
-    // Stopping condition
-    if(chi2 < getLambda(rec) ||
-       TMath::Prob(chi2 - getLambda(rec), points.size()) > 1e-3)
-    {
-      for(int k = 0; k < K ; k++)
-        cerr << "  vertex at " << mu(k) << endl;
+    if(strcmp(arc[i],"-interactionRegionSigmaZ") == 0 ||
+       strcmp(arc[i],"-irsig") == 0)
+         sigmaZ          = atof(arc[++i]);
 
-      cerr << " vertices = " << K << endl
-           << "\033[22;32m" << " chi2 ==> " << chi2 << "\033[22;0m" << endl;
- 
-      break;
-    }
+    if(strcmp(arc[i],"-randomGainHalfWidth") == 0 ||
+       strcmp(arc[i],"-rghw") == 0)
+         gainHalfWidth   = atof(arc[++i]);
+
+    if(strcmp(arc[i],"-i") == 0) sprintf(inputName ,"%s",arc[++i]);
+    if(strcmp(arc[i],"-o") == 0) sprintf(outputName,"%s",arc[++i]);
+
+    i++;
   }
+  while(i < arg);
 }
 
 /*****************************************************************************/
-VertexCollection findVertices(const vector<pair<double, double> > & points)
+void simulateEvents()
 {
-  // Initialize clusters for advanced methods
-  unsigned int maxVertices = (unsigned int)(100); // ???
-  vector<pair<TVectorD,TVectorD> > clusters;
-  for(unsigned int i = 0; i <= maxVertices; i++)
-  {
-    TVectorD mu(i);
-    TVectorD  P(i);
+  // Output file
+  TFile * fileOut = new TFile(outputName, "recreate");
 
-    clusters.push_back(pair<TVectorD,TVectorD>(mu,P));
-  }
-
-cerr << " clusters " << clusters.size() << " " << points.size() << endl;
-
-  cerr << " ---- hierarchical clustering ----" << endl;
-  unsigned int nOptimal;
-  vector<vector<int> > lists;
-
-  int dMax = 8; // ??
-  FastPairwiseNearestNeighbor thePairGroupMethod(dMax);
-  thePairGroupMethod.run(points, clusters, nOptimal, lists, maxVertices);
-
-  cerr << " ---- classification ---- "
-       << " " << points.size() << " " << clusters.size()
-       << endl;
-  VertexCollection rec;
-
-  // kMeans
-  numberOfVertices(points, clusters, rec, kMeans);
-  cerr << " kMeans " << rec.size() << endl;;
-
-  // gaussianMixture
-  numberOfVertices(points, clusters, rec, gaussianMixture);
-  cerr << " gaussianMixture " << rec.size() << endl;
-
-  // optimalTree
-  int K = nOptimal;
-  OptimalTree theOptimalTree;
-  TVectorD mu(K); mu = clusters[K].first;
-  TVectorD P(K) ; P  = clusters[K].second;
-
-  theOptimalTree.run(K,points, mu,P, lists, rec);
-  cerr << " optimalTree " << rec.size() << endl;
-
-  return rec;
-}
-
-/*****************************************************************************/
-int main(int arg, char **arc)
-{
-  TFile * file = new TFile("../out/bunchCrossings.root","recreate");
-  TTree * tree = new TTree("trackTree","trackTree");
+  // Tracks
+  TTree * tree    = new TTree("trackTree","trackTree");
 
   TBunchCrossing * bunchCrossing = new TBunchCrossing();
-
   tree->Branch("bunchCrossing", "TBunchCrossing", &bunchCrossing, 16000, 2);
 
-  // Take particles from Monte Carlo event generator
-  ifstream fileEvents("../data/minBias.dat");
- 
-  // Initialize tracking
-  KalmanTracking kalmanTracking;
+  // Materials
+  TTree * treeMaterials = new TTree("materialTree","materialTree");
 
-  cerr << " simulating events..";
+  vector<TLayer> materials;
+  treeMaterials->Branch("materials", &materials);
 
-  RecoClusters recoClusters;
-  ElossEstimator elossEstimator;
+  KalmanTracking kalmanTracking(materials, gainHalfWidth, true);
 
-  ofstream fileEstimate("../out/estimates.dat");
+  treeMaterials->Fill();
 
-//  do
-  for(int i = 0; i < 1; i++) // number of bx!
+  int nEvent = 0;
+
+  // Input file
+  igzstream fileEvents(inputName);
+
+  for(int ibunx = 0; ibunx < nBunchCrossings; ibunx++)
   { 
     bunchCrossing->runNumber = 1;
-    bunchCrossing->bxNumber  = i + 1;
+    bunchCrossing->bxNumber  = ++nEvent;
 
     cerr << "\033[22;31m"
          << " Bunch crossing " << bunchCrossing->bxNumber
          << "\033[22;0m" << endl;
 
-    vector<pair<double, double> > trackZ;
+    if(fix) nCollisions = int(Mu+0.5);
+       else nCollisions = getPoissonRandom(Mu);
 
-    for(int j = 0; j < 4; j++) // number of collisions per bx
+    for(int j = 0; j < nCollisions; j++)
     {
-      cerr << "Vertex " << j + 1 << endl;
-      // Read generted event
+      // Read generated event
       TVertex simVertex = readGeneratedEvent(fileEvents);
      
-      if(simVertex.tracks.size() > 0) // FIXME
+      if(simVertex.tracks.size() > 0)
       { 
-      cerr << " b1" << endl;
-    
-      TVertex recVertex;
+        TVertex recVertex;
 
-      cerr << " b2 " << simVertex.tracks.size() << endl;
-      for(vector<TTrack>::iterator track = simVertex.tracks.begin();
-                                   track!= simVertex.tracks.end(); track++)
-      {
-        TTrack recTrack;
-        cerr << " Track " << int(track - simVertex.tracks.begin()) + 1 << endl;
+        cerr << "   - simu clusters + tracking    ";
+  
+        for(vector<TTrack>::iterator track = simVertex.tracks.begin();
+                                     track!= simVertex.tracks.end(); )
+        {
+          TTrack recTrack;
+  
+          // simulate + reconstruct, true if at least 4 hits
+          if(kalmanTracking.process(*track, recTrack))
+          {
+            printPropeller(int(track - simVertex.tracks.begin() + 1));
+            recTrack.pdgId = track->pdgId; // FIXME
+            recVertex.tracks.push_back(recTrack);
 
-//        if(kalmanTracking.process(*track, recTrack)) ??
-        kalmanTracking.process(*track, recTrack); // FIXME empty track??
-cerr << "  size " << recTrack.lhits.size() << endl;
-
-        // for vertex finding
-        trackZ.push_back(pair<double,double>(recTrack.z,0.1)); // FIXME sigma_z
-
-        recVertex.tracks.push_back(recTrack);
+            track++;
+          }
+          else
+          {
+            simVertex.tracks.erase(track);
+          }
+        }
+        cerr << " [done]" << endl;
+  
+        // Do vertex finding! FIXME
+        recVertex.z = simVertex.z;
+  
+        // Store 
+        if(simVertex.tracks.size() > 0 &&
+           recVertex.tracks.size() > 0)
+        {
+          bunchCrossing->simVertices.push_back(simVertex);
+          bunchCrossing->recVertices.push_back(recVertex);
+        }
       }
-
-      // Do vertex finding! FIXME
-      recVertex.z = simVertex.z;
-
-      // Reconstruct clusters
-      for(vector<TTrack>::iterator track = recVertex.tracks.begin();
-                                   track!= recVertex.tracks.end(); track++)
-      {
-         cerr << " Track " << int(track - recVertex.tracks.begin()) + 1 << endl; 
-//         RecoClusters recoClusters;
-         recoClusters.run(*track);
-//        siEnergyLoss.reconstruct(track); // or per hit?
-
-         elossEstimator.estimate(*track, fileEstimate);
-      }
-
-      // Store 
-      bunchCrossing->simVertices.push_back(simVertex);
-      bunchCrossing->recVertices.push_back(recVertex);
-      }
-    }
-
-    // Vertex finding
-    VertexCollection recVertices;
-    if(trackZ.size() > 0) // FIXME
-      recVertices = findVertices(trackZ); 
-
-    // update vertex positions FIXME
-    for(vector<TVertex>::iterator 
-        vertex = bunchCrossing->recVertices.begin();
-        vertex!= bunchCrossing->recVertices.end(); vertex++)
-    {
-      float dzmin = 1e+99;
-      vector<Vertex>::const_iterator bestVertex;
- 
-      for(vector<Vertex>::const_iterator recVertex = recVertices.begin();
-                                         recVertex!= recVertices.end();
-                                         recVertex++)
-      if(fabs(vertex->z - recVertex->first) < dzmin)
-      {
-        dzmin = fabs(vertex->z - recVertex->first);
-        bestVertex = recVertex;
-      }
-
-      cerr << " setting vertex z " << vertex->z
-                                   << " -> " << bestVertex->first << endl;
-      vertex->z = bestVertex->first;
     }
 
     // Fill tree
     tree->Fill();
     bunchCrossing->Clear();
   }
-//  while(!fileEvents.eof());
-
-  fileEstimate.close();
 
   fileEvents.close(); 
 
-  file->Write();
-  file->Close();
+  fileOut->Write();
+  fileOut->Close();
 
   cerr << " [done]" << endl;
 }
+
+/*****************************************************************************/
+int main(int arg, char **arc)
+{
+  options(arg, arc);
+
+  simulateEvents();
+}
+

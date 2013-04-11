@@ -1,11 +1,11 @@
 #ifndef _FitStripCluster_h_
 #define _FitStripCluster_h_
 
-#include "CLHEP/Matrix/Matrix.h"
-#include "CLHEP/Matrix/Vector.h"
-
 #include <vector>
 #include <utility>
+
+#include "TMatrixD.h"
+#include "TVectorD.h"
 
 class FitStripCluster
 {
@@ -21,8 +21,8 @@ class FitStripCluster
   double getChi2   (const std::vector<double> & x);
 
   void getAlphaBeta(const std::vector<double> & x,
-                    CLHEP::HepMatrix & alpha,
-                    CLHEP::HepVector & beta,
+                    TMatrixD & alpha,
+                    TVectorD & beta,
                     const std::vector<bool> & isFix);
 
   const std::vector<std::pair<double,int> > & b;

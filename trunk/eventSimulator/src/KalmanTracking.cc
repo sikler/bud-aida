@@ -2,15 +2,20 @@
 
 #include "../../DataFormats/interface/TVertex.h"
 #include "../../DataFormats/interface/TTrack.h"
+#include "../../DataFormats/interface/TChipId.h"
+#include "../../DataFormats/interface/RandomGenerator.h"
 
-//#include "../interface/Hit.h"
+#include "../../siEnergyLoss/interface/Levels.h"
 #include "../../siEnergyLoss/interface/ClusterGenerator.h"
+
+#include "../../DataFormats/interface/Particles.h"
 
 #include <iostream>
 #include <fstream>
+#include <cstring>
+#include <cstdlib>
 
 using namespace std;
-using namespace CLHEP;
 
 //#define Debug
 
@@ -18,75 +23,142 @@ using namespace CLHEP;
 
 enum Flag { Random, Mean, Sigma };
 
-// FIXME 
-const double recMass = 0.139;
 const bool useOrigin = true;
 const bool useLogLikelihood = false;
-//const double maxChi = 500000.;
 const double maxChi = 100.;
 
 /*****************************************************************************/
-KalmanTracking::KalmanTracking()
+KalmanTracking::KalmanTracking
+  (vector<TLayer> & mat, float gainHalfWidth_, bool simu)
 {
   // silicon
-  rho = 2.329;        // g cm^-3
   X0  = 21.82 / rho;
 
-  readMaterial(material);
+  if(simu)
+  {
+    gainHalfWidth = gainHalfWidth_;
 
-  clusterGenerator = new ClusterGenerator();
+    readMaterial(material);
+    mat = material;
+
+    clusterGenerator = new ClusterGenerator();
+
+    fileChi.open("../out/chi.dat");
+  }
+  else
+  {
+    material = mat;
+    B = material[0].B; // FIXME
+
+    cerr << "  read " << material.size() << " layers" << endl;
+    cerr << "  magnetic field B = " << B << endl;
+
+    fileChi.open("../out/chi_.dat");
+  }
+
+  theRandom = new RandomGenerator();
 }
 
 /*****************************************************************************/
-void KalmanTracking::readMaterial(vector<Material> & material)
+KalmanTracking::~KalmanTracking()
+{
+  delete theRandom;
+}
+
+/*****************************************************************************/
+void KalmanTracking::readMaterial(vector<TLayer> & material)
 {
   cerr << " reading material description..";
 
   ifstream file;
-// FIXME
-/*
-  if(experiment == atlas)      file.open("../data/atlas.dat");
-  if(experiment == cms  )      file.open("../data/cms.dat"  );
-  if(experiment == alice)      file.open("../data/alice.dat");
-  if(experiment == perfect)    file.open("../data/perfect.dat");
-  if(experiment == atlas_full) file.open("../data/atlas_full.dat");
-*/
-  file.open("../data/cms.dat"  );
+  file.open("../data/cms.dat");
+
+  ofstream fileGain("../out/gains.orig");
 
   // Read magnetic field
   file >> B;
 
-  while(file.eof() == false)
-  {
-    float f;
-    file >> f;
+  int ilayer = 0;
 
-    if(file.eof() == false)
+  bool stop;
+
+  do
+  {
+    string s;
+    file >> s;
+
+    stop = (s.compare("stop") == 0);
+
+    if(!stop)
     {
-      Material m;
+      TLayer m;
       int d;
 
-      m.radius = f;
+      m.isPixel = (s.compare("p") == 0); // p (pixel) or s (strip)
 
-      file >> f; m.halfLength = f;
+      m.ilayer = ilayer++;
+
+      m.nrows    = 100;
+      m.ncolumns = 100;
+
+      float f;
+      file >> m.radius;
+      file >> m.halfLength;
+
+      for(int k = 0; k < 3; k++) 
+        file >> m.pitch[k]; // cm
  
-      file >> d; m.sigma_rphi = d * 1e-4; // um -> cm
-      file >> d; m.sigma_z    = d * 1e-4; // um -> cm
-      file >> f; m.thickness  = (f * 1e-2) * X0;   // x/X0 -> x
+      file >> d; m.sigma_rphi =  d * 1e-4;       // um   -> cm
+      file >> d; m.sigma_z    =  d * 1e-4;       // um   -> cm
+      file >> f; m.thickness  = (f * 1e-2) * X0; // x/X0 -> cm
+      file >> d; m.diffSigma  =  d * 1e-4;       // um   -> xm
 
-//      m.print();
+      file >> f; m.noise     = f*1e-3; // keV -> MeV
+      file >> f; m.threshold = f*1e-3; // keV -> MeV
+      file >> f; m.overflow  = f*1e-3; // keV -> MeV
+
+      m.coupling = 0.;
+      if(m.isPixel) file >> s; // pixel should not have coupling
+               else file >> m.coupling;
+
+      file >> m.dz;                   // dz
+      file >> d; m.dphi = (2*M_PI)/d; // dphi
+
+      // Find chip, set gains
+      for(double z   = -m.halfLength + m.dz/2; z < m.halfLength; z += m.dz)
+      for(double phi = m.dphi/2; phi < 2*M_PI; phi += m.dphi)
+      {
+        int iz   = floor(z / m.dz);
+        int iphi = floor(phi/ m.dphi);
+
+        TChipId chipId(m.ilayer,iz,iphi);
+
+        m.gain[chipId.code] =
+           1 + gainHalfWidth * (2*theRandom->getFlatRandom()-1);
+
+        fileGain << " " << chipId.getiLayer()
+                 << " " << chipId.getiZ()
+                 << " " << chipId.getiPhi() 
+                 << " " << m.gain[chipId.code]
+                 << endl;
+      }
+
+      m.B = B; // FIXME
 
       material.push_back(m);
     }
   }
+  while(!stop);
 
   file.close();
+
+  fileGain.close();
 
   cerr << " [done]" << endl;
 }
 
 /*****************************************************************************/
-void KalmanTracking::convertToParameters(Coord & coord, State & state)
+void KalmanTracking::convertToParameters(Point & coord, State & state)
 { // x,p ->
   double pz =                                              coord.p[2];
   double p  = sqrt(sqr(coord.p[0]) + sqr(coord.p[1]) + sqr(coord.p[2]));
@@ -106,7 +178,7 @@ void KalmanTracking::convertToParameters(Coord & coord, State & state)
 }
 
 /*****************************************************************************/
-void KalmanTracking::convertToCoordinates(State & state, Coord & coord)
+void KalmanTracking::convertToCoordinates(State & state, Point & coord)
 { // kappa, theta, psi, rphi, z ->
   double r   = state.material.radius; 
 
@@ -129,24 +201,14 @@ void KalmanTracking::convertToCoordinates(State & state, Coord & coord)
   coord.p[0] = coord.pt * cos(state.getPsi());
   coord.p[1] = coord.pt * sin(state.getPsi());
   coord.p[2] = coord.p_ * cos(state.getTheta());
-}
 
-/*****************************************************************************/
-double KalmanTracking::getFlatRandom()
-{
-  return drand48();
-}
-
-/****************************************************************************/
-double KalmanTracking::getGaussRandom()
-{
-  return sqrt(-2*log(getFlatRandom())) * cos(M_PI*getFlatRandom());
+  coord.isPixel = state.material.isPixel;
 }
 
 /*****************************************************************************/
 double KalmanTracking::multiScatt(State & state, int flag)
 {
-  Coord coord;
+  Point coord;
   convertToCoordinates(state, coord); // just to get p_
 
   double E = sqrt(sqr(coord.p_) + sqr(state.m));
@@ -167,7 +229,7 @@ double KalmanTracking::multiScatt(State & state, int flag)
   // Rotate (pz,pt)
   alpha = mean;
   if(flag == Random)
-    alpha += sigma * getGaussRandom();
+    alpha += sigma * theRandom->getGaussRandom();
 
   u[0] =   coord.pz*cos(alpha) + coord.pt*sin(alpha); // pz'
   u[1] = - coord.pz*sin(alpha) + coord.pt*cos(alpha); // pt'
@@ -180,7 +242,7 @@ double KalmanTracking::multiScatt(State & state, int flag)
   // Rotate (px,py)
   alpha = mean;
   if(flag == Random)
-    alpha += sigma * getGaussRandom();
+    alpha += sigma * theRandom->getGaussRandom();
 
   u[0] =   coord.p[0]*cos(alpha) + coord.p[1]*sin(alpha);
   u[1] = - coord.p[0]*sin(alpha) + coord.p[1]*cos(alpha);
@@ -196,13 +258,10 @@ double KalmanTracking::multiScatt(State & state, int flag)
 /*****************************************************************************/
 double KalmanTracking::energyLoss(State & state, int flag)
 {
-  Coord coord;
+  Point coord;
   convertToCoordinates(state, coord); // just to get pt
 
-  const double K = 0.307075e-3;
-  const double Z = 14.;
-  const double A = 28.;
-  const double me = 0.511e-3;
+  const double me = mass[elec]; 
 
   double E = sqrt(sqr(coord.p_) + sqr(state.m));
   double beta = coord.p_ / E;
@@ -227,7 +286,7 @@ double KalmanTracking::energyLoss(State & state, int flag)
   double dE  = mean;
 
   if(flag == Random)
-    dE += sigma * getGaussRandom(); 
+    dE += sigma * theRandom->getGaussRandom(); 
 
   double dp_ = dE / beta;
 
@@ -245,30 +304,30 @@ State KalmanTracking::makeRechit(State & state)
 {
   State rechit = state;
 
-// MODIFICATION STARTS HERE
   float factor = 1.;
-  if(getFlatRandom() < 1e-2) factor = 2.; // outliers, another FIXME
+
+  // sometimes add another component with factor 2 higher RMS
+  if(theRandom->getFlatRandom() < 1e-2) factor = 2.;
 
   rechit.setRPhi(state.getRPhi() +
-                 state.material.sigma_rphi * factor * getGaussRandom());
+    state.material.sigma_rphi * factor * theRandom->getGaussRandom());
 
   if(state.material.sigma_z < 5.) // smaller than 5 cm 
     rechit.setZ(state.getZ() +
-                state.material.sigma_z     * factor * getGaussRandom());
+       state.material.sigma_z * factor * theRandom->getGaussRandom());
   else
     rechit.setZ(state.getZ());
-// MODIFICATION ENDS HERE
 
   return rechit;
 }
 
 /*****************************************************************************/
 // Propagate to barrel, r1
-bool KalmanTracking::propagate(State & state, const Material & material)
+bool KalmanTracking::propagate(State & state, const TLayer & material)
 {
   double r1 = material.radius;
 
-  Coord coord;
+  Point coord;
   convertToCoordinates(state, coord);
 
   // First look at two dimensional projection
@@ -316,7 +375,7 @@ bool KalmanTracking::propagate(State & state, const Material & material)
   for(int k = 0 ; k < 2; k++) 
     coord.p[k] = u[k];
 
-  if(fabs(coord.x[2]) < material.halfLength) // FIXME
+  if(fabs(coord.x[2]) < material.halfLength)
   {
     convertToParameters(coord, state);
 
@@ -395,7 +454,7 @@ State KalmanTracking::fitCircle(vector<Layer> & layers)
   // Signed impact parameter
   double d0 = sqrt(sqr(C[0]) + sqr(C[1])) - r2;
 
-  Coord coord;
+  Point coord;
 
   for(int k = 0; k < 2; k++)
     coord.x[k] = d0 * C[k] / sqrt(sqr(C[0]) + sqr(C[1]));
@@ -417,7 +476,7 @@ State KalmanTracking::fitCircle(vector<Layer> & layers)
   coord.p[2] = pt *(c[2] - a[2]) / fabs(r2 * aCc);
 
   State vertex;
-  vertex.m = recMass;
+  vertex.m = mass[pion]; // recMass
   convertToParameters(coord, vertex);
 
 #ifdef Debug
@@ -432,9 +491,9 @@ State KalmanTracking::fitCircle(vector<Layer> & layers)
 }
 
 /*****************************************************************************/
-HepMatrix KalmanTracking::calculateF(State & rechit, Material & material)
+TMatrixD KalmanTracking::calculateF(State & rechit, TLayer & material)
 {
-  HepMatrix F(nPars,nPars, 0);
+  TMatrixD F(nPars,nPars); F.Zero();
 
   // Calculate derivatives
   State refer = rechit;
@@ -458,10 +517,25 @@ HepMatrix KalmanTracking::calculateF(State & rechit, Material & material)
 }
 
 /*****************************************************************************/
-HepMatrix KalmanTracking::calculateQ(State & state, const HepMatrix & F)
+TMatrixD KalmanTracking::outerProduct(const TVectorD & a, const TVectorD & b)
 {
-  HepMatrix Q(nPars,nPars);
-  HepVector k(nPars), t(nPars), p(nPars);
+  int na = a.GetNoElements();
+  int nb = b.GetNoElements();
+
+  TMatrixD M(na,nb);
+
+  for(int i = 0; i < na; i++)
+  for(int j = 0; j < nb; j++)
+    M[i][j] = a[i] * b[j];
+
+  return M;
+}
+
+/*****************************************************************************/
+TMatrixD KalmanTracking::calculateQ(State & state, const TMatrixD & F)
+{
+  TMatrixD Q(nPars,nPars);
+  TVectorD k(nPars), t(nPars), p(nPars);
 
   for(int i = 0; i < nPars; i ++)
   {
@@ -474,9 +548,9 @@ HepMatrix KalmanTracking::calculateQ(State & state, const HepMatrix & F)
   double sigma_theta = multiScatt(state, Sigma);
   double sigma_psi   = sigma_theta;
 
-  Q = (k * k.T()) * sqr(sigma_kappa) +
-      (t * t.T()) * sqr(sigma_theta) +
-      (p * p.T()) * sqr(sigma_psi  );
+  Q = outerProduct(k, k) * sqr(sigma_kappa) +
+      outerProduct(t, t) * sqr(sigma_theta) +
+      outerProduct(p, p) * sqr(sigma_psi  );
 
   return Q;
 }
@@ -484,12 +558,11 @@ HepMatrix KalmanTracking::calculateQ(State & state, const HepMatrix & F)
 /*****************************************************************************/
 double KalmanTracking::getChi2(const State & state)
 {
-  int ierr;
-
-  double chi2 = (state.r.T() * state.R.inverse(ierr) * state.r)[0];
+  TMatrixD In(TMatrixD::kInverted, state.R);
+  double chi2 = (state.r * (In * state.r));
 
   if(useLogLikelihood)
-    chi2 += log(2 * M_PI * state.R.determinant());
+    chi2 += log(2 * M_PI * state.R.Determinant());
 
   return chi2;
 }
@@ -498,11 +571,12 @@ double KalmanTracking::getChi2(const State & state)
 void KalmanTracking::fit(vector<Layer> & layers)
 {
   // Constant measurement and identity matrices
-  HepMatrix H(nMeas,nPars,0.); H[0][3] = 1.; H[1][4] = 1.;
-  HepMatrix Ip(nPars,nPars, 1);
-  HepMatrix Im(nMeas,nMeas, 1);
-
-  int ierr;
+  TMatrixD H(nMeas,nPars);
+    H.Zero(); H[0][3] = 1.; H[1][4] = 1.;
+  TMatrixD Ip(nPars,nPars);
+   Ip.Zero(); for(int i = 0; i < nPars; i++) Ip[i][i] = 1.;
+  TMatrixD Im(nMeas,nMeas);
+   Im.Zero(); for(int i = 0; i < nMeas; i++) Im[i][i] = 1.;
 
 #ifdef Debug
   ofstream file("../out/fit.dat",ios::app);
@@ -517,7 +591,7 @@ void KalmanTracking::fit(vector<Layer> & layers)
       layer->updated = fitCircle(layers);
 
       // Initial guess on covariance
-      HepMatrix C(nPars,nPars,0.);
+      TMatrixD C(nPars,nPars); C.Zero();
       for(int i = 0; i < nPars; i++)
       for(int j = 0; j < nPars; j++)
       {
@@ -534,23 +608,23 @@ void KalmanTracking::fit(vector<Layer> & layers)
       ************/
   
       // Target material
-      Material material = layer->simulated.material;
+      TLayer material = layer->simulated.material;
   
       // Start with previous updated state
       State state = (layer-1)->updated;
 
       // Transient F, Q, V, G
-      HepMatrix F = calculateF(state, material);
+      TMatrixD F = calculateF(state, material);
 
-      HepMatrix Q(nPars,nPars, 0.);
+      TMatrixD Q(nPars,nPars); Q.Zero();
       if(layer > layers.begin() + 1)
       Q = calculateQ(state, F);
 
-      HepMatrix V(nMeas,nMeas, 0.);
+      TMatrixD V(nMeas,nMeas); V.Zero();
       V[0][0] = sqr(layer->simulated.material.sigma_rphi);
       V[1][1] = sqr(layer->simulated.material.sigma_z   );
 
-      HepMatrix G(nMeas,nMeas, 0.);
+      TMatrixD G(nMeas,nMeas); G.Zero();
       G[0][0] = 1. / sqr(layer->simulated.material.sigma_rphi);
       G[1][1] = 1. / sqr(layer->simulated.material.sigma_z   );
 
@@ -572,16 +646,18 @@ void KalmanTracking::fit(vector<Layer> & layers)
       energyLoss(state, Mean);
 
       // Extrapolation of the covariance
-      state.C = F * state.C * F.T() + Q; 
+      TMatrixD FT(TMatrixD::kTransposed, F);
+      state.C = F * state.C * FT + Q; 
 
       // Measured
-      HepMatrix m = H * layer->measured.x;
+      TVectorD m = H * layer->measured.x;
 
       // Residuals of predictions
       state.r = m - H * state.x;
 
       // Covariance of predicted residuals
-      state.R = V + H * state.C * H.T();
+      TMatrixD HT(TMatrixD::kTransposed, H);
+      state.R = V + H * (state.C * HT);
 
       // Chi2 increment
       state.chi2 = getChi2(state);
@@ -589,7 +665,7 @@ void KalmanTracking::fit(vector<Layer> & layers)
       if(state.chi2 > maxChi * maxChi)
       {
 #ifdef Debug
-        cerr << " chi too big = " << sqrt(state.chi2) << endl;
+        cerr << " (b) chi too big = " << sqrt(state.chi2) << endl;
 #endif
 
         layers.erase(layer,layers.end());
@@ -604,8 +680,8 @@ void KalmanTracking::fit(vector<Layer> & layers)
       ************/
   
       // Kalman gain matrix
-      HepMatrix K =
-        state.C * H.T() * (V + H * state.C * H.T()).inverse(ierr);
+      TMatrixD K =
+        state.C * HT * (V + H * state.C * HT).Invert();
   
       // Update of the state vector
       state.x += K * (m - H * state.x);
@@ -625,7 +701,7 @@ void KalmanTracking::fit(vector<Layer> & layers)
       if(state.chi2 > maxChi * maxChi)
       {
 #ifdef Debug
-        cerr << " chi too big = " << sqrt(state.chi2) << endl;
+        cerr << " (c) chi too big = " << sqrt(state.chi2) << endl;
 #endif
 
         layers.erase(layer,layers.end());
@@ -633,7 +709,7 @@ void KalmanTracking::fit(vector<Layer> & layers)
       }
   
 #ifdef Debug
-      Coord coord;
+      Point coord;
       convertToCoordinates(state, coord);
   
       cerr <<  " fitted pt = " << coord.pt
@@ -658,41 +734,46 @@ void KalmanTracking::fit(vector<Layer> & layers)
   file << endl << endl;
   file.close();
 #endif
+}
 
-//  while(getchar() == 0);
+/*****************************************************************************/
+void KalmanTracking::set(TMatrixD & a, TMatrixD & b)
+{
+  a.ResizeTo(b);
+  a = b;
 }
 
 /*****************************************************************************/
 void KalmanTracking::smooth(vector<Layer> & layers)
 {
-  HepMatrix H(nMeas,nPars,0.); H[0][3] = 1.; H[1][4] = 1.;
+  TMatrixD H(nMeas,nPars); H.Zero(); H[0][3] = 1.; H[1][4] = 1.;
 
   // Global covariance
-//  HepMatrix R(layers.size()-1, layers.size()-1);
-  HepMatrix R(nMeas*(layers.size()-1),
-              nMeas*(layers.size()-1));
-  vector<HepMatrix> C(layers.size()-1);
+  TMatrixD R(nMeas*(layers.size()-1),
+             nMeas*(layers.size()-1));
+  vector<TMatrixD> C(layers.size()-1);
 
 #ifdef Debug
   ofstream file("../out/smoothing.dat",ios::app);
 #endif
 
   for(vector<Layer>::iterator layer = layers.end()   - 1;
-                              layer > layers.begin(); layer--) // FIXME was >
+                              layer > layers.begin(); layer--)
   {
-    HepMatrix V(nMeas,nMeas, 0.);
+    TMatrixD V(nMeas,nMeas); V.Zero();
     V[0][0] = sqr(layer->simulated.material.sigma_rphi);
     V[1][1] = sqr(layer->simulated.material.sigma_z   );
-
 
     if(layer == layers.end() - 1)
     {
       layer->smoothed = layer->updated;
 
       int i = layer - (layers.begin()+1);
-      C[i] = layer->smoothed.C;
 
-      HepMatrix r = V - (H * C[i] * H.T());
+      set(C[i], layer->smoothed.C);
+
+      TMatrixD HT(TMatrixD::kTransposed, H);
+      TMatrixD r(V - H * C[i] * HT);
 
       for(int i1 = 0; i1 < nMeas; i1++)
       for(int j1 = 0; j1 < nMeas; j1++)
@@ -701,43 +782,42 @@ void KalmanTracking::smooth(vector<Layer> & layers)
     else
     {
       // Smoother gain matrix
-      int ierr;
-      HepMatrix A = layer->updated.C * 
-                           layer->updated.F.T() *
-                          (layer+1)->predicted.C.inverse(ierr);
+      TMatrixD In(TMatrixD::kInverted, (layer+1)->predicted.C);
+
+      TMatrixD FT(TMatrixD::kTransposed, layer->updated.F);
+      TMatrixD A = layer->updated.C * FT * In;
 
       State state = layer->updated;
   
       state.x += A * ( (layer+1)->smoothed.x - (layer+1)->predicted.x );
-      state.C += A * ( (layer+1)->smoothed.C - (layer+1)->predicted.C ) * A.T();
+
+      TMatrixD AT(TMatrixD::kTransposed, A);
+      state.C += A * ( (layer+1)->smoothed.C - (layer+1)->predicted.C ) * AT;
 
       // Measured
-      HepMatrix m = H * layer->measured.x;
+      TVectorD m = H * layer->measured.x;
   
       state.r = m - H * state.x;
   
-/*
-      state.R += - H * A *
-                   ((layer+1)->smoothed.C - (layer+1)->predicted.C ) *
-                   A.T() * H.T();
-*/
-      state.R = V - H * state.C * H.T();
+      TMatrixD HT(TMatrixD::kTransposed, H);
+      state.R = V - H * state.C * HT;
 
       {
         int i = layer - (layers.begin()+1);
         int n = layers.size() - 1;
 
-        C[i] = state.C; 
+        set(C[i], state.C); 
 
         for(int j = i+1; j < n; j++)
           C[j] = A * C[j];
 
         for(int j = i; j < n; j++)
         {
-          HepMatrix r;
+          TMatrixD r(nMeas,nMeas); r.Zero();
 
-          if(i == j) r = V - (H * C[j] * H.T());
-                else r =   - (H * C[j] * H.T());
+          TMatrixD HT(TMatrixD::kTransposed, H);
+          if(i == j) r = V - (H * C[j] * HT);
+                else r = r - (H * C[j] * HT);
 
           for(int i1 = 0; i1 < nMeas; i1++)
           for(int j1 = 0; j1 < nMeas; j1++)
@@ -753,20 +833,18 @@ void KalmanTracking::smooth(vector<Layer> & layers)
 
       if(state.chi2 > maxChi * maxChi)
       {
-// FIXME< new
-//#ifdef Debug
-        cerr << " chi too big = " << sqrt(state.chi2) << endl;
-//#endif
+#ifdef Debug
+        cerr << " (a) chi too big = " << sqrt(state.chi2) << endl;
+#endif
 
         layers.erase(layer,layers.end());
         break;
       }
 
-
       layer->smoothed = state;
 
 #ifdef Debug
-    Coord coord;
+    Point coord;
     convertToCoordinates(state, coord);
 
     cerr <<  " smooth pt = " << coord.pt
@@ -782,7 +860,16 @@ void KalmanTracking::smooth(vector<Layer> & layers)
 #endif
   }
   
-  gR = R;
+  // copy with care
+  int n = nMeas*(layers.size() - 1);
+  TMatrixD Rp(n,n);
+
+  for(int i = 0; i < n; i++)
+  for(int j = 0; j < n; j++)
+   Rp[i][j] = R[i][j];
+
+//  gR = R;
+  set(gR, Rp);
 
 #ifdef Debug
   file << endl << endl;
@@ -793,10 +880,10 @@ void KalmanTracking::smooth(vector<Layer> & layers)
 /*****************************************************************************/
 State KalmanTracking::generate(TTrack & track)
 {
-  Coord coord;
+  Point coord;
 
   // Starts from origo
-  coord.x[0] = 0.; // FIXME
+  coord.x[0] = 0.;
   coord.x[1] = 0.;
   coord.x[2] = track.z;
 
@@ -814,12 +901,12 @@ State KalmanTracking::generate(TTrack & track)
 
   state.material.radius = 0.;
 
-//  state.m = genMass;
-  state.m = 0.139; // FIXME // MASSS!
+  // Default
+  state.m = mass[pion];
 
-  if(abs(track.pdgId) ==  211) state.m = 0.139;
-  if(abs(track.pdgId) ==  321) state.m = 0.493;
-  if(abs(track.pdgId) == 2212) state.m = 0.938;
+  // Ovewrite if there is a pdgId
+  for(int i = 1; i < nParts; i++)
+    if(abs(track.pdgId) == pdg[i]) state.m = mass[i];
 
 #ifdef Debug
   state.print();
@@ -843,8 +930,9 @@ void KalmanTracking::simulate(TTrack & track, vector<Layer> & layers)
   layers.push_back(layer);
 
   bool ok = true;
-  for(vector<Material>::const_iterator m = material.begin();
-                                       m!= material.end() && ok; m++)
+
+  for(vector<TLayer>::iterator m = material.begin(); // iterator??
+                               m!= material.end() && ok; m++)
   {
     Layer layer = layers.back();
 
@@ -852,47 +940,44 @@ void KalmanTracking::simulate(TTrack & track, vector<Layer> & layers)
     {
       multiScatt(layer.simulated, Random);
 
-      {
       State state = layer.simulated;
 
       double phi = 0.;
       if(state.material.radius > 0)
         phi = state.getRPhi() / state.material.radius - state.getPsi();
 
-//      double theta = state.getTheta() - state.getPsi(); // FIXME
-      double theta = state.getTheta() - M_PI/2; // FIXME
-// force PIXEL = 0
+      double theta = state.getTheta() - M_PI/2;
 
-double p = fabs(1/layer.simulated.getKappa());
-double betaGamma = p / layer.simulated.m;
-//cerr << " p = " << p  << " m = " << layer.simulated.m << endl;
+      double p = fabs(1/layer.simulated.getKappa());
+      double betaGamma = p / layer.simulated.m;
 
-      track.lhits.push_back(
-           clusterGenerator->create(0, betaGamma, theta, phi)); // FIXME
+      // FIXME
+      Point coord;
+      convertToCoordinates(layer.simulated, coord);
 
-cerr << " generated " << track.lhits.back().filledPixels.size()
-               << " " << track.lhits.back().allPixels.size();
-state.print();
-/*
-               << " theta,psi,rphi " << state.getTheta();
-               << " " << state.getPsi()
-               << " " << state.getRPhi()
-               << endl;
-*/
+      int ilayer, iz, iphi;
+      {
+        ilayer = int(m - material.begin());
+
+        double phi = atan2(coord.x[1], coord.x[0]);
+        double z   =       coord.x[2];
+
+        iz   = floor(z / m->dz);
+        iphi = floor( (phi < 0 ? phi + 2*M_PI : phi)/ m->dphi);
       }
+      TChipId chipId(ilayer, iz, iphi);
+
+      track.hits.push_back(
+           clusterGenerator->create(betaGamma, theta, phi, chipId,
+                                    &(*m), int(m - material.begin()) ) );
 
       energyLoss(layer.simulated, Random);
-//  FIXME    call ClusterGenerator here!!!! FIXME
 
       layer.measured = makeRechit(layer.simulated);
 
       layers.push_back(layer);
 
-      // FIXME
-      Coord coord;
-      convertToCoordinates(layer.simulated, coord);
-
-      track.hits.push_back(coord); // Push FIXME
+      track.points.push_back(coord); // Push
 
 #ifdef Debug
       file << " " << layer.simulated.xpos()
@@ -917,12 +1002,10 @@ state.print();
 
 //  while(getchar() == 0);
 #endif
-
-  cerr << " lhits = " << track.lhits.size() << endl;
 }
 
 /*****************************************************************************/
-vector<Coord> KalmanTracking::reconstruct(vector<Layer> & layers, double & c)
+vector<Point> KalmanTracking::reconstruct(vector<Layer> & layers, double & c, int pdgId)
 {
   // Fitting
   fit(layers);
@@ -930,7 +1013,7 @@ vector<Coord> KalmanTracking::reconstruct(vector<Layer> & layers, double & c)
   // Smoothing
   smooth(layers);
 
-  double chi2[4] = {0,0,0,0};
+  vector<double> chi2(4,0.);
 
   int nLayers = 1;
 
@@ -945,36 +1028,53 @@ vector<Coord> KalmanTracking::reconstruct(vector<Layer> & layers, double & c)
       nLayers++;
     }
 
-  HepVector gr(nMeas * (layers.size() - 1));
+  TVectorD gr(nMeas * (layers.size() - 1));
   for(vector<Layer>::iterator layer = layers.begin() + 1;
                               layer!= layers.end(); layer++)
     for(int i1 = 0; i1 < nMeas; i1++)
       gr[nMeas*(layer - (layers.begin()+1)) + i1] = (layer->smoothed.r)[i1];
 
-  int ierr;
-  chi2[3] = (gr.T() * gR.inverse(ierr) * gr)[0];
+  TMatrixD In(TMatrixD::kInverted, gR);
 
-  Coord coord;
+  chi2[3] = (gr * (In * gr));
+
+  Point coord;
   convertToCoordinates(layers[layers.size()-1].smoothed, coord);
+
+  if(layers.size() > 1)
+  {
+    Point coord;
+    convertToCoordinates(layers[layers.size()-1].smoothed, coord);
+
+    fileChi << " " << layers[1].smoothed.getKappa()
+            << " " << sqrt(chi2[0])
+            << " " << sqrt(chi2[1])
+            << " " << sqrt(chi2[2])
+            << " " << sqrt(chi2[3])
+            << " " << nLayers - 1
+            << " " << coord.p_
+            << " " << pdgId
+            << endl;
+  }
 
   c = chi2[0];
  
-  // Copy to coord
-  vector<Coord> hits;
-  for(vector<Layer>::iterator layer = layers.begin() + 0; // FIXME!!!
+  // Copy to Point
+  vector<Point> points;
+  for(vector<Layer>::iterator layer = layers.begin(); // FIXME!!!
                               layer!= layers.end(); layer++)
   {
-    Coord coord;
+    Point coord;
 
     if(layer == layers.begin())
       convertToCoordinates(layer->updated,  coord);
     else
       convertToCoordinates(layer->smoothed, coord);
 
-     hits.push_back(coord);
+     points.push_back(coord);
   }
 
-  return hits;
+  return points;
 }
 
 /*****************************************************************************/
@@ -988,20 +1088,71 @@ bool KalmanTracking::process(TTrack & simTrack, TTrack & recTrack)
   {
     double c;
 
-    recTrack.hits = reconstruct(layers, c);
+    // FIXME all below should be in the reco step, simple copy for now
+    recTrack.points = reconstruct(layers, c, simTrack.pdgId);
 
-    // FIXME
+    // Take updated (eta,pt) at beam line (radius = 0)
+    Point coord;
+    convertToCoordinates(layers[0].updated, coord);
+
+    recTrack.eta = coord.eta;
+    recTrack.pt  = coord.pt;
+
+    recTrack.d0 = sqrt(sqr(recTrack.points[0].x[0])
+                     + sqr(recTrack.points[0].x[1]));
+    recTrack.z  =          recTrack.points[0].x[2];
+
+//    recTrack.sigma_z = 0.1;
+//    recTrack.sigma_z = sqrt(layers[1].updated.C[4][4]); // FIXME
+    recTrack.sigma_z = 100e-4/recTrack.pt * pow(cosh(recTrack.eta),1.5);
+
+    recTrack.ndf  = recTrack.points.size() - 3 - 1;
+    recTrack.chi2 = c;
+
+    recTrack.hits = simTrack.hits; 
+
+    return true;
+  }
+  else
+    return false;
+}
+
+/*****************************************************************************/
+/*
+bool KalmanTracking::simulate(TTrack & simTrack)
+{
+  vector<Layer> layers;
+
+  simulate(simTrack, layers);
+
+
+  simTrack.layers = layers; 
+
+  return true;
+}
+*/
+
+/*****************************************************************************/
+/*
+bool KalmanTracking::reconstruct(TTrack & simTrack, TTrack & recTrack)
+{
+  vector<Layer> layers = simTrack.layers;
+
+  if(layers.size() >= 4)
+  {
+    double c;
+
+    recTrack.hits = reconstruct(layers, c, simTrack.pdgId);
+
     recTrack.d0 = sqrt(sqr(recTrack.hits[0].x[0])
                      + sqr(recTrack.hits[0].x[1]));
     recTrack.z  =          recTrack.hits[0].x[2];
 
-    recTrack.ndf  = recTrack.hits.size() - 3 - 1; // FIXME
+    recTrack.ndf  = recTrack.hits.size() - 3 - 1;
     recTrack.chi2 = c;
 
-    // FIXME
-    recTrack.lhits = simTrack.lhits; 
+    recTrack.hits = simTrack.hits;
 
-    // FIXME !!!!
     recTrack.eta = simTrack.eta;
     recTrack.pt  = simTrack.pt;
 
@@ -1010,4 +1161,4 @@ bool KalmanTracking::process(TTrack & simTrack, TTrack & recTrack)
   else
     return false;
 }
-
+*/

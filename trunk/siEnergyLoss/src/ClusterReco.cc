@@ -1,17 +1,11 @@
-#include "../interface/RecoClusters.h"
-
-#include "../interface/ClusterGenerator.h"
+#include "../interface/ClusterReco.h"
 #include "../interface/Levels.h"
-#include "../interface/TouchedChannels.h"
 #include "../interface/ElossModel.h"
 #include "../interface/NewtonMinimizer.h"
-
-#include "../interface/LinearProgramming.h"
 #include "../interface/FitStripCluster.h"
 
 #include "../../DataFormats/interface/TTrack.h"
-
-#include "CLHEP/Matrix/Matrix.h"
+#include "../../DataFormats/interface/TLayer.h"
 
 #include <cmath>
 #include <cstdlib>
@@ -19,47 +13,40 @@
 #include <iomanip>
 #include <cstring>
 
-#define sqr(x) ((x) * (x))
-
-#undef Debug
-//#define Debug
-
 using namespace std;
-using namespace CLHEP;
 
 double csim, cdef, psim[2], betaGamma;
 
 /*****************************************************************************/
-RecoClusters::RecoClusters()
+ClusterReco::ClusterReco(const vector<TLayer> & materials_) :
+  materials(materials_) 
 {
-//  if(strcmp(arc[3],"-pixel") == 0)
-// FIXME
-//    fileFit.open("../out/result_pixels.dat");
-/*
-  else
-    fileFit.open("../out/result_strips.dat");
-*/
+  filePixel.open("../out/result_pixels.dat");
+  fileStrip.open("../out/result_strips.dat");
+
+  fileFit.push_back(&filePixel);
+  fileFit.push_back(&fileStrip);
 }
 
 /*****************************************************************************/
-RecoClusters::~RecoClusters()
+ClusterReco::~ClusterReco()
 {
-//  fileFit.close();
+  fileFit.clear();
+
+  filePixel.close();
+  fileStrip.close();
 }
 
 /*****************************************************************************/
-void RecoClusters::fixHit(Hit & hit)
+void ClusterReco::fixHit(Hit & hit)
 {
-  hit.threshold = Threshold;
-  hit.overflow  = Overflow;
-
   // FIXME !!!!!! helycsere
   hit.filledPixels = hit.allPixels;
   hit.allPixels.clear();
 }
 
 /*****************************************************************************/
-void RecoClusters::estimatePositionLF(Hit & hit, double & epsilon)
+void ClusterReco::estimatePositionLF(Hit & hit, double & epsilon)
 {
   int xfirs[2] = {1e+3,1e+3};
   int xlast[2] = {-1,-1};
@@ -87,7 +74,7 @@ void RecoClusters::estimatePositionLF(Hit & hit, double & epsilon)
 
   for(int k = 0; k < 2; k++)
   {  
-    // get W, from hit.dpos[], FIXME
+    // get W, from hit.dpos[] // FIXME
     double W_eff = fabs(hit.dpos[k]) - (xlast[k] - xfirs[k] - 1);
 
     double delta = 1./2 * (qlast[k] - qfirs[k]) / (qlast[k] + qfirs[k]) * W_eff;
@@ -104,7 +91,7 @@ void RecoClusters::estimatePositionLF(Hit & hit, double & epsilon)
 }
 
 /*****************************************************************************/
-void RecoClusters::estimatePositionWeighted(Hit & hit, double & epsilon)
+void ClusterReco::estimatePositionWeighted(Hit & hit, double & epsilon)
 {
   double s = 0., sx = 0., sy = 0.;
 
@@ -132,18 +119,21 @@ void RecoClusters::estimatePositionWeighted(Hit & hit, double & epsilon)
 }
 
 /*****************************************************************************/
-void RecoClusters::estimateDeposit(Hit & hit, double epsilon, double * charge)
+void ClusterReco::estimateDeposit(Hit & hit, TLayer * unit,
+                                  double epsilon, double * charge)
 {
   for(int k = 0; k < 2; k++)
     charge[k] = 0.;
 
+  // Plain sum
   for(vector<Pixel>::const_iterator pixel = hit.filledPixels.begin();
                                     pixel!= hit.filledPixels.end(); pixel++)
     charge[0] += pixel->meas.y;
 
-  double t = hit.threshold;
-  double o = hit.overflow;
+  double t = unit->threshold;
+  double o = unit->overflow;
 
+  // With model
   for(vector<Pixel>::const_iterator pixel = hit.allPixels.begin();
                                     pixel!= hit.allPixels.end(); pixel++)
     if(pixel->calc.isTouched)
@@ -153,37 +143,46 @@ void RecoClusters::estimateDeposit(Hit & hit, double epsilon, double * charge)
         if(pixel->meas.y < o)
           charge[1] += pixel->meas.y;
         else
-          charge[1] += max(o + 25, epsilon * pixel->calc.l);
+        {
+          charge[1] += max(o + cForOverflow, epsilon * pixel->calc.l);
+          hit.hasOverflow = true;
+        }
       }
       else
         charge[1] += t * tanh(epsilon * pixel->calc.l / t);
     }
+    else
+    {
+      if(pixel->meas.y > o)
+        hit.hasOverflow = true;
+    }
 }
 
 /*****************************************************************************/
-pair<double,double> RecoClusters::processHit(Hit & hit)
+pair<double,double> ClusterReco::processHit(Hit & hit)
 {
-  // FIXME
-  bool isPixel = true;
-  
-  // Undo coupling, strips only
-  if(isPixel) hit.coupling = 0.;
-         else hit.coupling = Coupling;
+  TLayer * unit = &materials[hit.ilayer];
 
+  // FIXME
+  for(int k = 0; k < 2; k++)
+    psim[k] = hit.pos_orig[k];
+
+  csim = hit.charge_orig;
+
+  // Undo coupling, strips only
   vector<Pixel> unfoldedPixels, solvedPixels;
 
   int n = hit.filledPixels.size();
 
   vector<Pixel> origStrips = hit.filledPixels;
 
-  if(hit.coupling > 0)
+  if(!unit->isPixel)
   {
-    double a = hit.coupling;
+    double a = unit->coupling;
 
     // Simple unfolding
     vector<double> ups(n,0);
  
-
     vector<double> c(n);
     c[0] = 1 / (1 - 2*a);
 
@@ -203,20 +202,20 @@ pair<double,double> RecoClusters::processHit(Hit & hit)
 
       vector<pair<double,int> > b;
 
-      b.push_back(pair<double,int>(hit.threshold, isBelow));
+      b.push_back(pair<double,int>(unit->threshold, isBelow));
 
       for(vector<Pixel>::const_iterator m = hit.filledPixels.begin(); 
                                         m!= hit.filledPixels.end(); m++)
       {
-        if(m->meas.y > hit.overflow)
+        if(m->meas.y > unit->overflow)
           b.push_back(pair<double,int>(m->meas.y, isOver  ));
         else
           b.push_back(pair<double,int>(m->meas.y, isNormal));
       }
 
-      b.push_back(pair<double,int>(hit.threshold, isBelow));
+      b.push_back(pair<double,int>(unit->threshold, isBelow));
 
-      FitStripCluster theFitter(b, hit.coupling, Noise);
+      FitStripCluster theFitter(b, unit->coupling, unit->noise);
       double chi2; pair<double,double> result; vector<double> x;
       /*int width =*/ theFitter.run(chi2, result, x);
 
@@ -230,7 +229,7 @@ pair<double,double> RecoClusters::processHit(Hit & hit)
   double epsilon;
   double prec[3][2];
 
-  if(hit.coupling > 0)
+  if(!unit->isPixel)
     hit.filledPixels = unfoldedPixels;
 
   estimatePositionWeighted(hit, epsilon);
@@ -245,46 +244,49 @@ pair<double,double> RecoClusters::processHit(Hit & hit)
   vector<double> pars(3);
   pars[0] = hit.pos[0];
   pars[1] = hit.pos[1];
-  pars[2] = log(epsilon);        // log(3000 keV/cm)
+  pars[2] = log(epsilon);        // log(3 MeV/cm)
 
   // Get model
-  if(hit.coupling > 0)
-  {
+  if(!unit->isPixel)
     hit.filledPixels = solvedPixels;
-  }
 
-  ElossModel theModel(hit);
+  ElossModel theModel(hit, unit);
 
-  HepMatrix errs(3,3);
+  cForOverflow = theModel.getSigma(unit->overflow)/Nu;
+
+  TMatrixD errs(3,3);
   int nstep;
   
   vector<bool> isFix(3, false);
-  if(!isPixel) // FIXME
+  if(!unit->isPixel)
     isFix[1] = true;
 
   NewtonMinimizer theMinimizer;
   theMinimizer.minimize(theModel, isFix, pars, errs, nstep);
-  cerr << " nstep=" << nstep << endl;
 
   for(int k = 0; k < 2; k++)
     prec[2][k] = pars[k];
 
   // Write out
-//  fileFit << " " << n;
+  int type;
+  if(unit->isPixel) type = 0;
+               else type = 1;
+
+  *fileFit[type] << " " << n;
 
   // Go though the three methods
   for(int j = 0; j < 3; j++)
   {
     // Cartesian residuals
-//    for(int k = 0; k < 2; k++)
-//      fileFit << " " << (prec[j][k] - psim[k]) * hit.unit.pitch[k] * 1e+4;
+    for(int k = 0; k < 2; k++)
+      *fileFit[type] << " " << (prec[j][k] - psim[k]) * unit->pitch[k] * 1e+4;
 
     // Projected residuals
     double p[2];
     {
       double b[2], v[2];
       for(int k = 0; k < 2; k++)
-        b[k] = (prec[j][k] - psim[k]) * hit.unit.pitch[k];
+        b[k] = (prec[j][k] - psim[k]) * unit->pitch[k];
 
       for(int k = 0; k < 2; k++)
         v[k] = hit.ulambda[k];
@@ -293,8 +295,8 @@ pair<double,double> RecoClusters::processHit(Hit & hit)
       p[1] = (b[0]*v[1] - b[1]*v[0]);
     }
 
-//    for(int k = 0; k < 2; k++)
-//      fileFit << " " << p[k] * 1e+4; 
+    for(int k = 0; k < 2; k++)
+      *fileFit[type] << " " << p[k] * 1e+4; 
   }
 
   // Deposit
@@ -302,10 +304,9 @@ pair<double,double> RecoClusters::processHit(Hit & hit)
   double crec[2] = {0,0};
 
   
-  if(hit.coupling == 0.)
+  if(unit->isPixel)
   {
-//    Hit hit = theModel.getHit(pars);
-    estimateDeposit(hit, exp(pars[2]), crec);
+    estimateDeposit(hit, unit, exp(pars[2]), crec);
   }
   else
   {
@@ -313,56 +314,52 @@ pair<double,double> RecoClusters::processHit(Hit & hit)
                                       pixel!= origStrips.end(); pixel++)
       crec[0] += pixel->meas.y;
  
-    for(vector<Pixel>::const_iterator pixel = hit.filledPixels.begin();
-                                      pixel!= hit.filledPixels.end(); pixel++)
+    for(vector<Pixel>::const_iterator pixel = solvedPixels.begin();
+                                      pixel!= solvedPixels.end(); pixel++)
       crec[1] += pixel->meas.y;
   }
 
-//  for(int k = 0; k < 2; k++)
-//    fileFit << " " << crec[k] - csim;
-//  fileFit << " " << cdef - csim;
+/*
+  // FIXME
+  if(hit.hasOverflow || crec[1] < crec[0]
+    crec[1] = crec[0];
+*/
 
-  int ierr;
-  errs.invert(ierr);
+  for(int k = 0; k < 2; k++)
+    *fileFit[type] << " " << crec[k] - csim;
+  *fileFit[type] << " " << cdef - csim;
+
+  // add diagonal elements
+  for(int k = 0; k < 3; k++)
+    errs[k][k] += 1e-6;
+
+  errs.Invert();
 
   // in um
-//  for(int k = 0; k < 3; k++)
-//    fileFit << " " << sqrt(errs[k][k]) * hit.unit.pitch[k] * 1e+4;
-//
-//  fileFit << " " << sqrt(errs[2][2]);
-//
-//  fileFit << " " << betaGamma
-//          << " " << csim    / hit.lambda
-//          << " " << crec[1] / hit.lambda << endl; 
+  for(int k = 0; k < 3; k++)
+    *fileFit[type] << " " << sqrt(errs[k][k]) * unit->pitch[k] * 1e+4;
 
-  cerr << "  pos Weighted   : " << prec[0][0] << " " << prec[0][1] << endl;
-  cerr << "  pos Last-First : " << prec[1][0] << " " << prec[1][1] << endl;
-  cerr << "  pos Fitter     : " << prec[2][0] << " " << prec[2][1] << endl;
+  *fileFit[type] << " " << sqrt(errs[2][2]);
+
+  *fileFit[type] << " " << betaGamma
+          << " " << csim    / hit.lambda
+          << " " << crec[1] / hit.lambda
+          << " " << (unit->isPixel ? "pixel" : "strip")
+          << endl; 
 
   return pair<double,double>(crec[0], crec[1]);
 }
 
 /*****************************************************************************/
-void RecoClusters::run(TTrack & recTrack)
+void ClusterReco::run(TTrack & recTrack)
 {
-  cerr << " doing clusters " << recTrack.lhits.size() << endl;
-
-  if(recTrack.lhits.size() > 0)
-  for(vector<Hit>::iterator hit = recTrack.lhits.begin();
-                            hit!= recTrack.lhits.end(); hit++)
+  if(recTrack.hits.size() > 0)
+  for(vector<Hit>::iterator hit = recTrack.hits.begin();
+                            hit!= recTrack.hits.end(); hit++)
   {
-    cerr << "  doing cluster " << int(hit - recTrack.lhits.begin()) + 1;
-//    hit->print();
-//    cerr << " -----------------------------------------" << endl;
     fixHit(*hit);
-    cerr << " (" << hit->filledPixels.size() << ")";
-//    hit->print();
-//    hit->unit.print();
-//    while(getchar()==0); 
 
     pair<double,double> Delta = processHit(*hit);
-    cerr << " Delta = " << Delta.first << " " << Delta.second
-         << " l=" << hit->length << endl;
 
     hit->charge = Delta.second;
   }

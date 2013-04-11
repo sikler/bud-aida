@@ -5,8 +5,12 @@
 #include <vector>
 
 class ModelBichsel;
+class RandomGenerator;
+
 class Pixel;
 class Hit;
+class TChipId;
+class TLayer;
 
 class ClusterGenerator
 {
@@ -14,25 +18,19 @@ class ClusterGenerator
    ClusterGenerator();
    ~ClusterGenerator();
 
-   Hit create(int type, double betaGamma, double theta, double phi);
-
-//   void run(int n, int type);
+   Hit create(double betaGamma, double theta, double phi,
+              TChipId & chipId, TLayer * mat, int ilayer);
 
  private:
-   double getFlatRandom();
-   double getGaussRandom();
-
-   void addCoupling(Hit & hit);
+   void addCoupling(Hit & hit, TLayer * unit);
 
    double getIntegral(double x, int x0, int x1, double sigma);
 
    void matchOrAdd(std::vector<Pixel> & pixels,
                    int x, int y, double Delta);
 
-//   void writeHit(ModelBichsel & theModel, std::ofstream & file,
-//                 int type, double & betaGamma);
-
-   ModelBichsel * theModel;
+   ModelBichsel    * theModel;
+   RandomGenerator * theRandom;
 };
 
 #endif
