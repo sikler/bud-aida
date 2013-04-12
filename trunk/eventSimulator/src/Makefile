@@ -27,7 +27,7 @@ LIBS   = -lm `root-config --libs` \
 			../../DataFormats/lib/libdict.a \
 			../../siEnergyLoss/lib/libsiEnergyLoss.a \
 			../../minBiasVertexing/lib/libminBiasVertexing.a
-	g++ -Wno-unused-variable $(CFLAGS) $(LFLAGS) -o $@ $^ $(LIBS)
+	g++ $(CFLAGS) $(LFLAGS) -o $@ $^ $(LIBS)
 
 ../bin/simulateEvents : simulateEvents.o KalmanTracking.o gzstream.o \
 			../../DataFormats/lib/libdict.a \

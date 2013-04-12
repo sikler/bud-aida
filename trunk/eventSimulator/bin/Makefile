@@ -6,7 +6,10 @@ view : ../view/bunchCrossing.zip ../view/clusters.zip
 #PRE = valgrind --leak-check=full
 PRE =
 
-NEVENTS = 1000
+NEVENTS = 500
+
+BASEURL = http://localhost:8000/view
+#BASEURL = http://sikler.web.cern.ch/sikler/bud-aida
 
 ###############################################################################
 ../view/%.zip : ../out/%.m
@@ -14,7 +17,8 @@ NEVENTS = 1000
 
 ../out/bunchCrossing.m : plotEvents \
 				../out/bunchCrossings_reco.root
-	$(PRE) ./$< -event 6 -i ../out/bunchCrossings_reco.root
+	$(PRE) ./$< -event 6 -baseUrl $(BASEURL) \
+	 -i ../out/bunchCrossings_reco.root
 
 ###############################################################################
 #../out/gains.dat : calibrateGain \
@@ -25,8 +29,8 @@ NEVENTS = 1000
 #../out/hits.bin :		../out/bunchCrossings_reco.root
 #	touch $@
 
-../out/bunchCrossings_reco.root : reconstructEvents calibrateGain \
-       				../out/bunchCrossings_simu.root 
+../out/bunchCrossings_reco.root : reconstructEvents calibrateGain
+#       				../out/bunchCrossings_simu.root 
 	$(PRE) ./reconstructEvents -collectHits asPion \
 	 -i ../out/bunchCrossings_simu.root -o $@
 	#

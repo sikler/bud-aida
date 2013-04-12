@@ -95,7 +95,7 @@ void reconstructEvents()
   KalmanTracking kalmanTracking(*materials, 0., false);
   ClusterReco    clusterReco   (*materials); // pass
 
-  ElossEstimator elossEstimator;
+  ElossEstimator elossEstimator(*materials);
 
   if(collectHits != asPion)
   {

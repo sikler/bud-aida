@@ -7,8 +7,8 @@
 //#include "../../DataFormats/interface/TLayer.h"
 
 class TTrack;
-class Hit;
 class TLayer;
+class Hit;
 
 class ClusterReco
 {
