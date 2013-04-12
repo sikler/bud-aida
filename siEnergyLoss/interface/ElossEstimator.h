@@ -7,6 +7,7 @@
 #include <map>
 
 class TTrack;
+class TLayer;
 
 #include "../../DataFormats/interface/TSlimMeasurement.h"
 #include "../../DataFormats/interface/TChipId.h" // FIXME
@@ -15,6 +16,7 @@ class ElossEstimator
 {
  public:
   ElossEstimator();
+  ElossEstimator(const std::vector<TLayer> & materials_);
   virtual ~ElossEstimator();
 
   void loadGains
@@ -65,6 +67,8 @@ class ElossEstimator
   std::vector<TSlimMeasurement> slim;
 
   std::map<ChipId, float> gains;
+ 
+  std::vector<TLayer> materials;
 };
 
 #endif

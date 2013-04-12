@@ -2,6 +2,7 @@
 #include "../interface/ElossEstimator.h"
 
 #include "../../DataFormats/interface/TTrack.h"
+#include "../../DataFormats/interface/TLayer.h"
 
 #include <cmath>
 #include <iostream>
@@ -15,6 +16,12 @@ using namespace std;
 
 /*****************************************************************************/
 ElossEstimator::ElossEstimator()
+{
+}
+
+/*****************************************************************************/
+ElossEstimator::ElossEstimator(const vector<TLayer> & materials_) :
+  materials(materials_)
 {
 }
 
@@ -248,9 +255,22 @@ void ElossEstimator::correctDeposits(TTrack * track)
 {
   for(vector<Hit>::iterator hit = track->hits.begin();
                             hit!= track->hits.end(); hit++)
+  {
+    double overflow = materials[hit->ilayer].overflow;
+    double gain     = gains[hit->chipId.code];
+   
+    // correct simulated
+    hit->charge_orig *= gain;
+
     for(vector<Pixel>::iterator pixel = hit->allPixels.begin();
                                 pixel!= hit->allPixels.end(); pixel++)
-      pixel->meas.y *= gains[hit->chipId.code];
+    {
+      pixel->meas.y *= gain;
+
+      if(pixel->meas.y > overflow) // FIXME
+         pixel->meas.y = overflow + 1e-4; // add 0.1 keV
+    } 
+  }
 }
 
 /****************************************************************************/

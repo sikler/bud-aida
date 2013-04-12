@@ -16,7 +16,7 @@
 
 using namespace std;
 
-char inputName[256];
+char inputName[256], baseUrl[256];
 int ievent = 1;
 
 /*****************************************************************************/
@@ -191,9 +191,7 @@ double dx = 0,dy = 0,dz = 0;
              << "&pt=-";
 
     ostringstream url;
-
-//    url << "http://sikler.web.cern.ch/sikler/bud-aida/passClick.html";
-    url << "http://localhost:8000/view/passClick.html";
+    url << baseUrl << "/passClick.html";
 
     ostringstream vth;
     vth << "?iv=" << iv
@@ -213,54 +211,23 @@ double dx = 0,dy = 0,dz = 0;
   // simTracks
   file << ", If[st, {RGBColor[0.5,0.5,0.5]";
   fileC<< ", If[(1==1), {RGBColor[0,0,0]";
-  for(vector<TVertex>::iterator vertex = bunx->simVertices.begin();
-                                vertex!= bunx->simVertices.end(); vertex++)
+  for(vector<TVertex>::const_iterator vertex = bunx->simVertices.begin();
+                                      vertex!= bunx->simVertices.end();
+                                      vertex++)
   {
     int iv = int(vertex - bunx->simVertices.begin()) + 1;
 
     file << ", If[(iv==0 || iv=="<<iv<<"), {AbsolutePointSize[6]";
 
-    // Vertex
-/*
-    file << ", RGBColor[0.5,0.5,0.5], Point[{" << 0
-                                        << "," << 0
-                                        << "," << vertex->z << "}]" << endl;
-    file << ", Text[StyleForm[\"" << iv << "\", FontFamily->\"Helvetica\"";
-
-    ostringstream info;
-        info << setprecision(3) << "&z0=-"     
-             << "&d0=-"    
-             << "&chi2=-"   
-             << "&ndf=-"    
-             << "&eta=-"    
-             << "&pt=-";
-
-    ostringstream url;
-    url << "file:///home/sikler/aida/bud-aida/eventSimulator/view/passClick.html";
-
-    ostringstream vth;
-    vth << "?iv=" << iv
-        << "&it=-1"
-        << "&ih=-1";
-
-    file << ", URL->\""
-         << url.str() << vth.str() << info.str() << ",target=passClick\"]";    
-
-    file << ", {" << 0
-           << "," << 0
-           << "," << vertex->z << "}" << ", {2,1}]" << endl;
-*/
-    //
-
     fileC<< ", If[(iv=="<<iv<<"), {AbsolutePointSize[6]";
-    for(vector<TTrack>::iterator track = vertex->tracks.begin();
-                                 track!= vertex->tracks.end(); track++)
+    for(vector<TTrack>::const_iterator track = vertex->tracks.begin();
+                                       track!= vertex->tracks.end(); track++)
     {
       int it = int(track - vertex->tracks.begin()) + 1;
 
       file << ", If[(it==0 || it=="<<it<<"), {AbsolutePointSize[6]";
       fileC<< ", If[(it=="<<it<<"), {AbsolutePointSize[6]";
-      for(vector<Point>::const_iterator hit = track->points.begin();     
+      for(vector<Point>::const_iterator hit = track->points.begin();
                                         hit!= track->points.end(); hit++)
       {
         int ih = int(hit - track->points.begin()) + 1;
@@ -292,14 +259,12 @@ double dx = 0,dy = 0,dz = 0;
              << "&pt="     << hit->pt;
 
         ostringstream url;
- 
-//        url << "http://sikler.web.cern.ch/sikler/bud-aida/passClick.html";
-        url << "http://localhost:8000/view/passClick.html";
+        url << baseUrl << "/passClick.html";
 
         ostringstream vth;
         vth << "?iv=" << iv
             << "&it=" << it
-            << "&ih=" << ih;
+            << "&ih=" << ih; // FIXME
 
         file << ", Text[StyleForm[\"" << it << "\", FontFamily->\"Helvetica\"";
 
@@ -326,18 +291,12 @@ double dx = 0,dy = 0,dz = 0;
       file << "}]";
 
       // hits
-      for(vector<Hit>::iterator hit = track->hits.begin();     
-                                hit!= track->hits.end(); hit++)
+      for(vector<Hit>::const_iterator hit = track->hits.begin();
+                                      hit!= track->hits.end(); hit++)
       {
-        TLayer * unit = &materials[hit->ilayer];
-
         int ih = int(hit - track->hits.begin()) + 1;
 
         fileC<< ", If[(ih=="<<ih<<"), {AbsolutePointSize[6]";
-/*
-        fileC<< ", Text[StyleForm[" 
-             << hit->allPixels.size() << "], {0,0,1}, {0,0}]" << endl;
-*/
 
         double s0=0,s1=0,n=0;
         for(vector<Pixel>::const_iterator pixel = hit->allPixels.begin();
@@ -350,34 +309,31 @@ double dx = 0,dy = 0,dz = 0;
 
         s0/=n; s1/=n;
 
-if(unit->isPixel) // FIXME
-{
-        dx = unit->pitch[0];
-        dy = unit->pitch[1];
-        dz = unit->pitch[2];
-}
+        TLayer mat = materials[hit->ilayer];
+
+        dx = mat.pitch[0];
+        dy = mat.pitch[1];
+        dz = mat.pitch[2];
 
         for(vector<Pixel>::const_iterator pixel = hit->allPixels.begin();
                                           pixel!= hit->allPixels.end(); pixel++)
         {
           fileC<< ", RGBColor[0.0,0.0,0.0]" << endl;
-
-          // Put energy deposit per pixel here
-
           fileC<< ", Text[StyleForm[\""
-            << int(pixel->meas.y * 1e+3) << "\", FontFamily->\"Helvetica\"], {" 
+          // Put energy deposit per pixel here
+                << int(pixel->meas.y * 1e+3) << "\", FontFamily->\"Helvetica\"], {"
                    << (pixel->meas.x[0] + 0.5 - s0)*dx
-            << "," << (pixel->meas.x[1] + 0.5 - s1)*dy 
+            << "," << (pixel->meas.x[1] + 0.5 - s1)*dy
             << "," << "0}, {0,0}]" << endl;
 
-          if(unit->isPixel)
+          if(mat.isPixel)
           {
             fileC<< ", RGBColor[0.4,0.4,0.4]" << endl;
-            plotPixel(fileC, *pixel, unit->pitch, s0, s1);
+            plotPixel(fileC, *pixel, mat.pitch, s0, s1);
           }
         }
 
-        if(unit->isPixel)
+        if(mat.isPixel)
         {
           fileC<< ", RGBColor[0.5,0,0]" << endl;
           fileC<< ", Line[{{" << (hit->pos_orig[0] - s0 - hit->dpos[0]/2)*dx
@@ -409,7 +365,7 @@ if(unit->isPixel) // FIXME
     file << ", If[(iv==0 || iv=="<<iv<<"), {AbsolutePointSize[6]";
 
     // Vertex
-    file << ", RGBColor[0.8,0.2,0.2], Point[{" << 0       
+    file << ", RGBColor[0.8,0.2,0.2], Point[{" << 0 
                                         << "," << 0
                                         << "," << vertex->z << "}]" << endl;
     file << ", Text[StyleForm[\"" << iv << "\", FontFamily->\"Helvetica\"";
@@ -423,17 +379,15 @@ if(unit->isPixel) // FIXME
              << "&pt=-";
 
     ostringstream url;
-
-//    url << "http://sikler.web.cern.ch/sikler/bud-aida/passClick.html";
-    url << "http://localhost:8000/view/passClick.html";
+    url << baseUrl << "/passClick.html";
 
     ostringstream vth;
     vth << "?iv=" << iv
-        << "&it=-1"
+        << "&it=-1" 
         << "&ih=-1";
 
     file << ", URL->\""
-         << url.str() << vth.str() << info.str() << ",target=passClick\"]";
+         << url.str() << vth.str() << info.str() << ",target=passClick\"]"; 
 
     file << ", {" << 0
            << "," << 0
@@ -451,37 +405,6 @@ if(unit->isPixel) // FIXME
     int iv = int(vertex - bunx->recVertices.begin()) + 1;
 
     file << ", If[(iv==0 || iv=="<<iv<<"), {AbsolutePointSize[6]";
-
-/*
-    // Vertex
-    file << ", RGBColor[0.8,0.2,0.2], Point[{" << 0 
-                                        << "," << 0
-                                        << "," << vertex->z << "}]" << endl;
-    file << ", Text[StyleForm[\"" << iv << "\", FontFamily->\"Helvetica\"";
-
-    ostringstream info;
-        info << setprecision(3) << "&z0=-"
-             << "&d0=-"
-             << "&chi2=-"
-             << "&ndf=-"
-             << "&eta=-"
-             << "&pt=-";
-
-    ostringstream url;
-    url << "file:///home/sikler/aida/bud-aida/eventSimulator/view/passClick.html";
-
-    ostringstream vth;
-    vth << "?iv=" << iv
-        << "&it=-1" 
-        << "&ih=-1";
-
-    file << ", URL->\""
-         << url.str() << vth.str() << info.str() << ",target=passClick\"]"; 
-
-    file << ", {" << 0
-           << "," << 0
-           << "," << vertex->z << "}" << ", {-1,1}]" << endl;
-*/
 
     for(vector<TTrack>::const_iterator track = vertex->tracks.begin();
                                        track!= vertex->tracks.end(); track++)
@@ -523,8 +446,7 @@ if(unit->isPixel) // FIXME
              << "&pt="     << hit->pt;
 
         ostringstream url;
-//        url << "http://sikler.web.cern.ch/sikler/bud-aida/passClick.html";
-        url << "http://localhost:8000/view/passClick.html";
+        url << baseUrl << "/passClick.html";
 
         ostringstream vth;
         vth << "?iv=" << iv
@@ -599,6 +521,9 @@ void options(int arg, char **arc)
 
     if(strcmp(arc[i],"-event") == 0 ||
        strcmp(arc[i],"-e"    ) == 0) ievent = atoi(arc[++i]);
+
+    if(strcmp(arc[i],"-baseUrl") == 0)
+      sprintf(baseUrl ,"%s",arc[++i]);
 
     i++;
   }
